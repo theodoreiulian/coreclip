@@ -112,7 +112,7 @@ def reframe_video(
         # PASS E — camera + render
         trajectory = plan_camera(decisions, tracks, meta, target_w, target_h, cfg)
         ok = render_clip(input_path, output_path, trajectory, target_w, target_h,
-                         cfg, tracks=tracks, asd_scores=asd_scores)
+                         cfg, meta=meta)
         if not ok:
             if os.path.exists(output_path):
                 os.remove(output_path)
