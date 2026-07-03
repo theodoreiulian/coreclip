@@ -8,7 +8,7 @@ from models.job import Job
 from models.clip import Clip
 from pipeline import ingestion, audio_analysis, moment_detection, clip_extraction, reformat, captioning
 from services.redis_pubsub import publish_status, publish_status_batch
-from utils.file_manager import cleanup_source_files, cleanup_intermediates
+from utils.file_manager import cleanup_source_files, cleanup_intermediates, ensure_disk_space
 from utils.logger import get_job_logger
 from config import config
 
@@ -257,6 +257,7 @@ class PipelineOrchestrator:
             self.summary = ""
 
     def handle_clipping(self, job, db):
+        ensure_disk_space(config.MIN_DISK_SPACE_GB)
         summary = getattr(self, 'summary', "")
         moment_detection.detect_moments(job, db, summary)
         if job.total_clips_found > 0:
@@ -265,9 +266,11 @@ class PipelineOrchestrator:
             cleanup_source_files(job.id)
 
     def handle_processing(self, job, db):
+        ensure_disk_space(config.MIN_DISK_SPACE_GB)
         self._run_clip_stage(job, db, _reformat_clip_worker, "processing")
 
     def handle_captioning(self, job, db):
+        ensure_disk_space(config.MIN_DISK_SPACE_GB)
         self._run_clip_stage(job, db, _caption_clip_worker, "captioning")
         if getattr(config, 'CLEANUP_INTERMEDIATES', False):
             cleanup_intermediates(job.id)

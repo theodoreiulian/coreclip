@@ -61,7 +61,7 @@ def generate(clip: Clip, db: Session):
         input_vid = os.path.abspath(clip.raw_clip_path)
     y_position = 1920 * 0.65
         
-    clip_dir = os.path.dirname(clip.raw_clip_path)
+    clip_dir = os.path.join(config.OUTPUT_DIR, clip.job_id, f"clip_{clip.clip_index}")
     transcript_path = os.path.join(clip_dir, "transcript.json")
     
     with open(transcript_path, 'r', encoding='utf-8') as f:

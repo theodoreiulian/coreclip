@@ -111,6 +111,7 @@ class Config:
     GCS_SERVICE_ACCOUNT_JSON: str = os.getenv("GCS_SERVICE_ACCOUNT_JSON", "")
 
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
+    INTERMEDIATE_DIR: str = os.getenv("INTERMEDIATE_DIR", "")
     LOG_DIR: str = os.getenv("LOG_DIR", "./logs")
     FONT_DIR: str = os.getenv("FONT_DIR", "./fonts")
 

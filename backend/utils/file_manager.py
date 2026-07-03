@@ -36,6 +36,15 @@ def get_clip_dir(job_id: str, clip_index: int) -> str:
     os.makedirs(clip_dir, exist_ok=True)
     return clip_dir
 
+def get_intermediate_dir(job_id: str, clip_index: int) -> str:
+    if config.INTERMEDIATE_DIR:
+        clip_dir = os.path.join(config.INTERMEDIATE_DIR, job_id, f"clip_{clip_index}")
+    else:
+        job_output_dir = os.path.join(config.OUTPUT_DIR, job_id)
+        clip_dir = os.path.join(job_output_dir, f"clip_{clip_index}")
+    os.makedirs(clip_dir, exist_ok=True)
+    return clip_dir
+
 def cleanup_source_files(job_id: str):
     """Delete source video for a job to reclaim disk space."""
     job_dir = os.path.join(config.OUTPUT_DIR, job_id)
@@ -46,13 +55,17 @@ def cleanup_source_files(job_id: str):
 
 def cleanup_intermediates(job_id: str):
     """Delete intermediate clip renders (raw, vertical) keeping only captioned.mp4."""
-    job_dir = os.path.join(config.OUTPUT_DIR, job_id)
-    if not os.path.exists(job_dir):
-        return
-    for root, dirs, files in os.walk(job_dir):
-        for f in files:
-            if f in ["raw.mp4", "vertical.mp4"]:
-                os.remove(os.path.join(root, f))
+    dirs_to_clean = [os.path.join(config.OUTPUT_DIR, job_id)]
+    if config.INTERMEDIATE_DIR:
+        dirs_to_clean.append(os.path.join(config.INTERMEDIATE_DIR, job_id))
+        
+    for job_dir in dirs_to_clean:
+        if not os.path.exists(job_dir):
+            continue
+        for root, dirs, files in os.walk(job_dir):
+            for f in files:
+                if f in ["raw.mp4", "vertical.mp4"]:
+                    os.remove(os.path.join(root, f))
 
 def cleanup_transcripts(job_id: str):
     """Delete per-clip transcript JSON files for a job."""
