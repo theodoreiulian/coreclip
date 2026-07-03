@@ -111,7 +111,7 @@ class Config:
     GCS_SERVICE_ACCOUNT_JSON: str = os.getenv("GCS_SERVICE_ACCOUNT_JSON", "")
 
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
-    INTERMEDIATE_DIR: str = os.getenv("INTERMEDIATE_DIR", "")
+    INTERMEDIATE_DIR: str = os.getenv("INTERMEDIATE_DIR", "/tmp/coreclip_intermediates")
     LOG_DIR: str = os.getenv("LOG_DIR", "./logs")
     FONT_DIR: str = os.getenv("FONT_DIR", "./fonts")
 
@@ -134,5 +134,8 @@ class Config:
             raise ValueError(
                 "GEMINI_API_KEY is required. Set it in your .env file or environment."
             )
+        
+        if self.INTERMEDIATE_DIR:
+            os.makedirs(self.INTERMEDIATE_DIR, exist_ok=True)
 
 config = Config()
