@@ -83,7 +83,6 @@ def reframe_video(
     try:
         from services.reframer.config import load_reframer_config
         from services.reframer.detect import analyze_video
-        from services.reframer.shots import detect_shots
         from services.reframer.audio_features import load_clip_audio
         from services.reframer.tracking import build_tracks
         from services.reframer.asd import run_asd
@@ -94,12 +93,11 @@ def reframe_video(
         cfg = load_reframer_config()
         _apply_determinism(cfg)
 
-        # PASS A — shots + audio
-        shots = detect_shots(input_path)
+        # PASS A — audio
         audio = load_clip_audio(input_path, cfg.vad_threshold)
 
-        # PASS B — detection
-        meta, detections = analyze_video(input_path, cfg)
+        # PASS B — detection + shots
+        meta, detections, shots = analyze_video(input_path, cfg)
         if meta.frame_count == 0:
             logger.error("reframe_video: no frames decoded")
             return False
