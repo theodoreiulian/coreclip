@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger("clipper")
 
-celery_app = Celery('clipper', broker=config.REDIS_URL, include=['tasks.celery_tasks'])
+celery_app = Celery('clipper', broker=config.REDIS_URL, backend=None, include=['tasks.celery_tasks'])
 
 celery_app.conf.update(
     task_serializer='json',
@@ -27,6 +27,7 @@ celery_app.conf.update(
     # Keep the Whisper/CV worker alive long enough to amortize model load cost,
     # but restart periodically to cap memory growth from native libraries.
     worker_max_tasks_per_child=int(os.getenv('WORKER_MAX_TASKS_PER_CHILD', '50')),
+    task_ignore_result=True,
 )
 
 celery_app.conf.beat_schedule = {
