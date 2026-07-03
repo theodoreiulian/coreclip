@@ -90,8 +90,14 @@ def post_clip(self, scheduled_post_id: str):
             f"account @{account.display_name} (attempt {attempt}/{self.max_retries + 1})"
         )
         try:
+            from services.ffmpeg_client import get_video_info
+            logger.info(f"Validating video metadata via ffprobe: {clip.final_clip_path}")
+            info = get_video_info(clip.final_clip_path)
+            if info.get('duration', 0) <= 0:
+                raise Exception("Video validation failed: invalid duration or unreadable file")
+
             client = get_platform_client(sp.platform)
-            logger.info(f"Validating video: {clip.final_clip_path}")
+            logger.info(f"Platform-specific validation: {clip.final_clip_path}")
             val = client.validate_video(clip.final_clip_path)
             if not val.valid:
                 raise Exception(f"Validation failed: {val.error_message}")
@@ -168,22 +174,36 @@ def check_scheduled_posts():
         from models.clip import Clip
         from models.scheduled_post import ScheduledPost
 
-        due = db.query(ScheduledPost).filter(
-            ScheduledPost.status == "pending",
-            ScheduledPost.scheduled_time <= datetime.utcnow(),
-        ).all()
-        for sp in due:
-            sp.status = "posting"
-            db.commit()
-            post_clip.delay(sp.id)
+        batch_size = 50
+        while True:
+            due = db.query(ScheduledPost).filter(
+                ScheduledPost.status == "pending",
+                ScheduledPost.scheduled_time <= datetime.utcnow(),
+            ).limit(batch_size).all()
+            
+            if not due:
+                break
+                
+            for sp in due:
+                sp.status = "posting"
+                db.commit()
+                post_clip.delay(sp.id)
 
         # complete jobs whose posts are all done
-        for job in db.query(Job).filter(Job.status == "posting").all():
-            posts = db.query(ScheduledPost).join(
-                Clip, ScheduledPost.clip_id == Clip.id
-            ).filter(Clip.job_id == job.id).all()
-            if posts and all(p.status in ("posted", "failed", "cancelled") for p in posts):
-                job.status = "completed"
-                db.commit()
+        offset = 0
+        while True:
+            jobs = db.query(Job).filter(Job.status == "posting").order_by(Job.created_at.asc()).limit(batch_size).offset(offset).all()
+            if not jobs:
+                break
+                
+            for job in jobs:
+                posts = db.query(ScheduledPost).join(
+                    Clip, ScheduledPost.clip_id == Clip.id
+                ).filter(Clip.job_id == job.id).all()
+                if posts and all(p.status in ("posted", "failed", "cancelled") for p in posts):
+                    job.status = "completed"
+                    db.commit()
+                else:
+                    offset += 1
     finally:
         db.close()
