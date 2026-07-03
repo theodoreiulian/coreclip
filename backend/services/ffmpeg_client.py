@@ -184,7 +184,9 @@ def _encoder_quality_args(codec: str, preset: str, crf: int) -> list[str]:
     """
     if codec in {"h264_videotoolbox", "hevc_videotoolbox"}:
         # q:v roughly 0-100; 23 is a reasonable default for intermediates.
-        return ["-q:v", str(min(100, max(0, crf)))]
+        # Some FFmpeg versions don't support -q:v for videotoolbox, so we use -b:v
+        # A reasonable bitrate for intermediate is 5M
+        return ["-b:v", "5M"]
     if codec == "h264_nvenc":
         nvenc_preset = "p4" if preset in {"ultrafast", "superfast", "veryfast"} else "p5"
         return ["-preset", nvenc_preset, "-cq", str(crf), "-b:v", "0"]
