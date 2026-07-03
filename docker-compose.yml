@@ -1,0 +1,88 @@
+version: '3.8'
+
+x-backend-build: &backend-build
+  build:
+    context: ./backend
+  environment:
+    - REDIS_URL=redis://redis:6379/0
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  backend:
+    <<: *backend-build
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./fonts:/app/fonts
+      - ./.env:/app/.env
+    depends_on:
+      - redis
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  celery-worker:
+    <<: *backend-build
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./fonts:/app/fonts
+      - ./.env:/app/.env
+    depends_on:
+      - redis
+      - backend
+    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=1
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+
+  celery-beat:
+    <<: *backend-build
+    volumes:
+      - ./.env:/app/.env
+    depends_on:
+      - redis
+    command: celery -A tasks.celery_app beat --loglevel=info
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  frontend:
+    build: 
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+    command: npm run dev -- --host 0.0.0.0
+    profiles:
+      - dev
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  redis_data:
