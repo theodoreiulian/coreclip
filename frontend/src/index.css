@@ -1,0 +1,645 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   CoreClip — design system
+   A sleek, high-tech "studio command center": deep blue-black canvas lit by
+   electric blue→cyan energy glows, frosted-glass surfaces, and glossy controls.
+   ========================================================================== */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas,
+    monospace;
+
+  /* Brand */
+  --color-brand-50: #eff6ff;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-accent-400: #22d3ee;
+  --color-accent-500: #06b6d4;
+  --color-accent-600: #0891b2;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Core palette as raw vars (used by component classes below) */
+  --ink: #060912;
+  --blue: #3b82f6;
+  --blue-soft: #60a5fa;
+  --cyan: #22d3ee;
+
+  --text: #eaeef6;
+  --text-dim: #97a1b6;
+  --text-faint: #646d82;
+
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  --glass: rgba(255, 255, 255, 0.045);
+  --glass-2: rgba(255, 255, 255, 0.07);
+  --glass-hi: rgba(255, 255, 255, 0.09);
+
+  --radius: 16px;
+}
+
+/* ----------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--text);
+  background-color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.011em;
+  overflow: hidden; /* the app shell manages its own scroll regions */
+}
+
+/* Ambient light: a fixed canvas of soft, drifting energy glows behind everything. */
+.app-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(58rem 58rem at 12% -8%, rgba(37, 99, 235, 0.22), transparent 60%),
+    radial-gradient(48rem 48rem at 92% 108%, rgba(34, 211, 238, 0.16), transparent 60%),
+    radial-gradient(40rem 40rem at 88% 4%, rgba(59, 130, 246, 0.10), transparent 55%),
+    linear-gradient(180deg, #0a0e1a 0%, #060912 100%);
+}
+.app-ambient::before,
+.app-ambient::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.5;
+}
+.app-ambient::before {
+  width: 38rem;
+  height: 38rem;
+  top: -10rem;
+  left: -8rem;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.4), transparent 70%);
+  animation: drift1 26s ease-in-out infinite alternate;
+}
+.app-ambient::after {
+  width: 34rem;
+  height: 34rem;
+  bottom: -12rem;
+  right: -6rem;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.3), transparent 70%);
+  animation: drift2 32s ease-in-out infinite alternate;
+}
+
+@keyframes drift1 {
+  to {
+    transform: translate3d(6rem, 4rem, 0) scale(1.12);
+  }
+}
+@keyframes drift2 {
+  to {
+    transform: translate3d(-5rem, -3rem, 0) scale(1.08);
+  }
+}
+
+/* Typographic rhythm */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.4);
+  color: #fff;
+}
+
+/* Scrollbars — thin, glassy, on-brand */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: padding-box;
+}
+
+/* Native form controls inherit our dark theme + brand accent */
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--blue);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+:focus-visible {
+  outline: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Surfaces — frosted glass
+   -------------------------------------------------------------------------- */
+.glass {
+  position: relative;
+  background: var(--glass);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+    0 18px 50px -24px rgba(0, 0, 0, 0.8);
+}
+.glass-2 {
+  background: var(--glass-2);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.08) inset,
+    0 24px 60px -28px rgba(0, 0, 0, 0.85);
+}
+
+/* A faint sheen line that runs along a panel's top edge for the "glossy" read */
+.sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.card-hover {
+  transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+.card-hover:hover {
+  transform: translateY(-3px);
+  border-color: rgba(96, 165, 250, 0.45);
+  background: var(--glass-2);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.1) inset,
+    0 28px 60px -26px rgba(37, 99, 235, 0.5),
+    0 18px 50px -24px rgba(0, 0, 0, 0.85);
+}
+
+/* ----------------------------------------------------------------------------
+   Buttons — glossy
+   -------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1;
+  padding: 0.625rem 1rem;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s ease, filter 0.18s ease, box-shadow 0.18s ease,
+    background 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+  user-select: none;
+}
+.btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: saturate(0.6);
+}
+.btn svg {
+  flex: none;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 9px;
+}
+.btn-lg {
+  padding: 0.8rem 1.25rem;
+  font-size: 0.95rem;
+  border-radius: 13px;
+}
+
+/* Primary — blue→cyan energy */
+.btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 45%, #22d3ee 100%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.32) inset,
+    0 8px 24px -8px rgba(56, 132, 246, 0.7);
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.38) inset,
+    0 12px 30px -8px rgba(56, 132, 246, 0.85);
+}
+
+/* Pink — TikTok-flavoured (platform brand accent) */
+.btn-pink {
+  color: #fff;
+  background: linear-gradient(135deg, #ec4899 0%, #f43f5e 100%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.3) inset,
+    0 8px 22px -8px rgba(236, 72, 153, 0.7);
+}
+.btn-pink:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Success */
+.btn-success {
+  color: #fff;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.28) inset,
+    0 8px 22px -8px rgba(16, 185, 129, 0.6);
+}
+.btn-success:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Danger */
+.btn-danger {
+  color: #fff;
+  background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.26) inset,
+    0 8px 22px -8px rgba(244, 63, 94, 0.6);
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Subtle glass button */
+.btn-ghost {
+  color: var(--text);
+  background: var(--glass-2);
+  border-color: var(--line);
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.05) inset;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--glass-hi);
+  border-color: var(--line-strong);
+}
+
+.btn-quiet {
+  color: var(--text-dim);
+  background: transparent;
+  border-color: var(--line);
+}
+.btn-quiet:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--glass);
+  border-color: var(--line-strong);
+}
+
+/* ----------------------------------------------------------------------------
+   Inputs
+   -------------------------------------------------------------------------- */
+.input {
+  width: 100%;
+  color: var(--text);
+  background: rgba(6, 9, 18, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 0.625rem 0.85rem;
+  font-size: 0.9rem;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+.input::placeholder {
+  color: var(--text-faint);
+}
+.input:hover {
+  border-color: var(--line-strong);
+}
+.input:focus {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(6, 9, 18, 0.75);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18);
+}
+select.input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2397a1b6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  padding-right: 2.2rem;
+  cursor: pointer;
+}
+.input-sm {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+  border-radius: 9px;
+}
+
+/* ----------------------------------------------------------------------------
+   Custom themed select (replaces native <select> so the option list is ours)
+   -------------------------------------------------------------------------- */
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  color: var(--text);
+  background: rgba(6, 9, 18, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 0.625rem 0.85rem;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+.select-trigger:hover {
+  border-color: var(--line-strong);
+}
+.select-trigger[aria-expanded="true"] {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(6, 9, 18, 0.75);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18);
+}
+.select-trigger .chev {
+  flex: none;
+  color: var(--text-dim);
+  transition: transform 0.18s ease;
+}
+.select-trigger[aria-expanded="true"] .chev {
+  transform: rotate(180deg);
+}
+
+.select-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(11, 15, 25, 0.92);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid var(--line-strong);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.08) inset,
+    0 24px 60px -24px rgba(0, 0, 0, 0.85);
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.select-option:hover {
+  background: var(--glass-hi);
+  color: var(--text);
+}
+.select-option[data-selected="true"] {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.92), rgba(34, 211, 238, 0.82));
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.2) inset;
+}
+.select-option .opt-check {
+  flex: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Badges / pills — soft, tinted status chips
+   -------------------------------------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+.badge .dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.badge-blue {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+.badge-emerald {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.13);
+  border-color: rgba(16, 185, 129, 0.28);
+}
+.badge-amber {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.28);
+}
+.badge-rose {
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.13);
+  border-color: rgba(244, 63, 94, 0.3);
+}
+.badge-sky {
+  color: #7dd3fc;
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.28);
+}
+.badge-slate {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+/* Hashtag / token chip */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* ----------------------------------------------------------------------------
+   Segmented control
+   -------------------------------------------------------------------------- */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 11px;
+  background: rgba(6, 9, 18, 0.5);
+  border: 1px solid var(--line);
+}
+.seg-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  text-transform: capitalize;
+  transition: color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+.seg-btn:hover {
+  color: var(--text);
+}
+.seg-btn[data-active="true"] {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.92), rgba(34, 211, 238, 0.85));
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.25) inset,
+    0 6px 16px -8px rgba(56, 132, 246, 0.7);
+}
+
+/* ----------------------------------------------------------------------------
+   Misc effects
+   -------------------------------------------------------------------------- */
+.brand-text {
+  background: linear-gradient(100deg, #93c5fd 0%, #60a5fa 45%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.live-dot {
+  position: relative;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+  animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ping {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px rgba(52, 211, 153, 0);
+  }
+}
+
+.spinner {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease both;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.glow-ring {
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.55),
+    0 0 22px -2px rgba(56, 132, 246, 0.75);
+}
+
+/* Honour reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .app-ambient::before,
+  .app-ambient::after,
+  .live-dot,
+  .spinner,
+  .fade-in {
+    animation: none !important;
+  }
+}

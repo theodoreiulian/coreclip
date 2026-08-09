@@ -1,0 +1,100 @@
+# ============================================================
+# CoreClip .gitignore — Public Repository
+# ============================================================
+
+# ---------------------- Secrets / Config --------------------
+.env
+.env.local
+.env.*.local
+token_store.json
+*.pem
+*.key
+
+# ---------------------- Python ------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+
+# ---------------------- Node.js -----------------------------
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/tsconfig.tsbuildinfo
+
+# ---------------------- Database ----------------------------
+db.sqlite3
+db.sqlite3-shm
+db.sqlite3-wal
+
+# ---------------------- Redis / Celery ----------------------
+dump.rdb
+backend/dump.rdb
+celerybeat-schedule
+celerybeat-schedule.db
+backend/celerybeat-schedule
+backend/celerybeat-schedule.db
+
+# ---------------------- Runtime Outputs ---------------------
+output/
+logs/
+*.log
+
+# ---------------------- Model Weights -----------------------
+# Large binary files — users download these at runtime
+*.pt
+*.pth
+*.onnx
+backend/.models/*.caffemodel
+backend/.models/*.prototxt
+
+# ---------------------- TikTok Sessions ---------------------
+.tiktok_sessions/
+.tiktok_debug/
+
+# ---------------------- Test / Scratch Media -----------------
+backend/test.mp4
+backend/test.wav
+test_crop.mp4
+test_sendcmd.txt
+
+# ---------------------- OS / IDE ----------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.Spotlight-V100
+.Trashes
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------------------- Agent / Tool Configs -----------------
+.omo/
+.opencode/
+.agents/
+.gemini/
+
+# ---------------------- Electron Builds ---------------------
+electron/dist/
+electron/out/
+
+# ---------------------- Misc --------------------------------
+*.bak
+*.tmp
+*.temp

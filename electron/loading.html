@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
+    <title>CoreClip</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 26px;
+        color: #eaeef6;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background:
+          radial-gradient(50rem 50rem at 15% -10%, rgba(37, 99, 235, 0.24), transparent 60%),
+          radial-gradient(42rem 42rem at 95% 110%, rgba(34, 211, 238, 0.18), transparent 60%),
+          linear-gradient(180deg, #0a0e1a 0%, #060912 100%);
+        -webkit-user-select: none;
+        user-select: none;
+        overflow: hidden;
+      }
+      .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(70px);
+        pointer-events: none;
+        opacity: 0.55;
+      }
+      .orb.a {
+        width: 30rem; height: 30rem; top: -10rem; left: -8rem;
+        background: radial-gradient(circle, rgba(37, 99, 235, 0.55), transparent 70%);
+        animation: drift 22s ease-in-out infinite alternate;
+      }
+      .orb.b {
+        width: 26rem; height: 26rem; bottom: -10rem; right: -6rem;
+        background: radial-gradient(circle, rgba(34, 211, 238, 0.42), transparent 70%);
+        animation: drift2 28s ease-in-out infinite alternate;
+      }
+      @keyframes drift { to { transform: translate3d(4rem, 3rem, 0) scale(1.12); } }
+      @keyframes drift2 { to { transform: translate3d(-4rem, -2rem, 0) scale(1.08); } }
+
+      .card {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        padding: 40px 56px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(22px) saturate(150%);
+        -webkit-backdrop-filter: blur(22px) saturate(150%);
+        box-shadow:
+          0 1px 0 0 rgba(255, 255, 255, 0.08) inset,
+          0 30px 70px -30px rgba(0, 0, 0, 0.85);
+      }
+      .brand { display: flex; align-items: center; gap: 14px; }
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 13px;
+        background: linear-gradient(135deg, #2563eb, #3b82f6 45%, #22d3ee);
+        box-shadow: 0 10px 26px -10px rgba(37, 99, 235, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+      }
+      .mark svg { display: block; }
+      .logo {
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        background: linear-gradient(100deg, #93c5fd, #60a5fa 55%, #67e8f9);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .spinner {
+        width: 34px;
+        height: 34px;
+        border: 3px solid rgba(255, 255, 255, 0.12);
+        border-top-color: #38bdf8;
+        border-radius: 50%;
+        animation: spin 0.85s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .status {
+        max-width: 80vw;
+        min-height: 1.4em;
+        font-size: 13px;
+        line-height: 1.4;
+        color: #97a1b6;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .hint {
+        position: fixed;
+        z-index: 1;
+        bottom: 18px;
+        font-size: 11px;
+        color: #586173;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .orb, .spinner { animation: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="orb a"></div>
+    <div class="orb b"></div>
+    <div class="card">
+      <div class="brand">
+        <span class="mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+            <path d="M8 5.5v13l11-6.5-11-6.5z" />
+          </svg>
+        </span>
+        <span class="logo">CoreClip</span>
+      </div>
+      <div class="spinner"></div>
+      <div class="status" id="status">Starting up…</div>
+    </div>
+    <div class="hint">First launch installs dependencies and may take a few minutes.</div>
+    <script>
+      // Called from the main process via executeJavaScript.
+      window.setStatus = function (text) {
+        var el = document.getElementById('status');
+        if (el) el.textContent = text;
+      };
+    </script>
+  </body>
+</html>

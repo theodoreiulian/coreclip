@@ -1,0 +1,73 @@
+"""TikTok posting by driving the real TikTok Studio uploader in a logged-in
+browser session. No API, no developer app, no audit, no quota.
+
+Each connected account is a persistent Chromium profile (cookies on disk).
+CoreClip's beat scheduler fires when a clip is due; at that moment the profile
+is opened headless, the clip is uploaded through TikTok's web uploader, and
+published immediately via the Post button.
+"""
+import logging
+import os
+import random
+
+from services.platform_clients.base import PlatformClient, ValidationResult, UploadResult, PostStatus
+from services.ffmpeg_client import get_video_info
+from services.tiktok_browser import post_video, NotLoggedInError
+
+logger = logging.getLogger("clipper")
+
+MAX_CAPTION = 2200
+MAX_DURATION_SEC = 600
+
+# The posted caption is intentionally just laughing emojis + hashtags — no text.
+LAUGH_EMOJIS = ["😂", "🤣"]
+
+
+def _truncate(s: str, limit: int) -> str:
+    return s if len(s) <= limit else s[:limit]
+
+
+class TikTokClient(PlatformClient):
+    def validate_video(self, video_path: str) -> ValidationResult:
+        if not video_path or not os.path.exists(video_path):
+            return ValidationResult(False, "Video file not found")
+        if os.path.getsize(video_path) == 0:
+            return ValidationResult(False, "Video file is empty")
+        try:
+            if get_video_info(video_path)["duration"] > MAX_DURATION_SEC:
+                return ValidationResult(False, "Duration exceeds TikTok's 10-minute limit")
+        except Exception as e:
+            logger.warning(f"TikTok validate: could not probe {video_path}: {e}")
+        return ValidationResult(True)
+
+    def _build_caption(self, metadata: dict) -> str:
+        # No text caption: just 2–4 laughing emojis (one type, repeated) followed
+        # by the canonical hashtags. Generated metadata captions are ignored here.
+        laugh = random.choice(LAUGH_EMOJIS) * random.randint(2, 4)
+        tags = metadata.get("hashtags") or []
+        tag_str = " ".join(f"#{str(t).lstrip('#')}" for t in tags if str(t).strip())
+        return _truncate(f"{laugh} {tag_str}".strip(), MAX_CAPTION)
+
+    def upload(self, video_path: str, metadata: dict) -> UploadResult:
+        session_path = metadata.get("account_session_path")
+        if not session_path:
+            return UploadResult(status="failed", error_message="No TikTok session — reconnect the account")
+
+        caption = self._build_caption(metadata)
+
+        try:
+            result = post_video(session_path, video_path, caption)
+        except NotLoggedInError as e:
+            return UploadResult(status="failed", error_message=str(e))
+        except Exception as e:
+            logger.error(f"TikTok browser upload failed: {e}")
+            return UploadResult(status="failed", error_message=str(e))
+
+        if not result.get("success"):
+            return UploadResult(status="failed", error_message=result.get("error") or "Unknown error")
+
+        logger.info(f"TikTok posted via browser (session={session_path})")
+        return UploadResult(status="live", url=result.get("url"))
+
+    def check_status(self, upload_id: str) -> PostStatus:
+        return PostStatus(status="live")

@@ -1,0 +1,27 @@
+{
+  "name": "coreclip-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CoreClip desktop app — an Electron shell that launches the full CoreClip stack and opens it in a native window.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "fr.hexalabs.coreclip",
+    "productName": "CoreClip",
+    "files": [
+      "electron/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.video",
+      "target": "dir"
+    }
+  }
+}
