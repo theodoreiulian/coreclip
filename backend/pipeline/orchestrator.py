@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models.job import Job
 from models.clip import Clip
-from pipeline import ingestion, audio_analysis, moment_detection, clip_extraction, reformat, captioning
+from pipeline import ingestion, audio_analysis, moment_detection, clip_extraction, reformat, captioning, metadata_generation
 from services.redis_pubsub import publish_status, publish_status_batch
 from utils.file_manager import cleanup_source_files, cleanup_intermediates, ensure_disk_space
 from utils.logger import get_job_logger
@@ -20,6 +20,7 @@ STAGES = [
     "clipping",
     "processing",
     "captioning",
+    "generating_metadata",
 ]
 
 
@@ -155,8 +156,9 @@ class PipelineOrchestrator:
     def _run_clip_stage(self, job: Job, db: Session, worker_fn, stage: str):
         """Run a per-clip worker over all non-failed clips in a process pool.
 
-        Celery worker concurrency stays at 1 (Whisper model); this local pool
-        parallelizes only the CPU-heavy reformat/caption work per punchlist.
+        Celery worker concurrency stays at 1 so the Whisper model is loaded once
+        per worker process; this local pool is what recovers the lost
+        parallelism, and only for the CPU-heavy reformat/caption work.
         """
         clip_ids = [
             row[0] for row in db.query(Clip.id).filter(
@@ -274,3 +276,11 @@ class PipelineOrchestrator:
         self._run_clip_stage(job, db, _caption_clip_worker, "captioning")
         if getattr(config, 'CLEANUP_INTERMEDIATES', False):
             cleanup_intermediates(job.id)
+
+    def handle_generating_metadata(self, job, db):
+        if job.total_clips_found == 0:
+            return
+        try:
+            metadata_generation.generate_batch(job, db)
+        except Exception as e:
+            logger.warning(f"Metadata generation failed for job {job.id}: {e}. Clips remain ready for review.")

@@ -27,15 +27,27 @@ MFCC_FPS = 100      # python_speech_features default winstep = 10 ms
 
 
 def _extract_wav(video_path: str, wav_path: str) -> bool:
+    # Resolve the binary rather than trusting PATH: a GUI-launched backend has a
+    # minimal PATH on both macOS and Windows, where "ffmpeg" alone won't resolve.
+    from services.ffmpeg_client import _get_ffmpeg_binary
+    from utils.platform_compat import no_window_kwargs
+
     cmd = [
-        "ffmpeg", "-y", "-i", video_path,
+        _get_ffmpeg_binary(), "-y", "-i", video_path,
         "-vn", "-ac", "1", "-ar", str(SR),
         "-acodec", "pcm_s16le",
         wav_path, "-loglevel", "error",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False,
+            encoding="utf-8", errors="replace", **no_window_kwargs(),
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Audio extract failed for {video_path}: {e}")
+        return False
     if result.returncode != 0 or not os.path.exists(wav_path):
-        logger.warning(f"Audio extract failed for {video_path}: {result.stderr[-300:]}")
+        logger.warning(f"Audio extract failed for {video_path}: {(result.stderr or '')[-300:]}")
         return False
     return True
 

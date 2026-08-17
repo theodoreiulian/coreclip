@@ -1,4 +1,15 @@
+import logging
 import os
+import sys
+
+# backend/ must be importable before we can reach utils.platform_compat — the
+# API server, the Celery worker and ad-hoc scripts all enter from different
+# working directories.
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+from utils.platform_compat import default_intermediate_dir
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -18,8 +29,6 @@ def _get_default_whisper_device() -> str:
         import torch
         if torch.cuda.is_available():
             return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
     except ImportError:
         pass
     return "cpu"
@@ -28,14 +37,29 @@ class Config:
     # Base directory (parent of backend/)
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_DEFAULT_MODEL: str = os.getenv("GEMINI_DEFAULT_MODEL", "gemini-2.5-flash")
-    # Cheaper/faster model used for metadata generation when no per-job override is provided.
-    GEMINI_METADATA_MODEL: str = os.getenv("GEMINI_METADATA_MODEL", "gemini-2.5-flash")
-    # Multimodal model used to locate a TikTok uploader element from a screenshot
-    # when the hardcoded CSS selectors drift. Env-overridable in case the
-    # published preview id differs slightly.
-    GEMINI_VISION_MODEL: str = os.getenv("GEMINI_VISION_MODEL", "gemini-3-flash-preview")
+    # The API key is supplied at runtime via the user settings file (Settings UI).
+    # Use gemini_api_key() to get the effective key.
+    _GEMINI_API_KEY: str = ""
+    # Last-resort fallback only, used when the user has not picked a model in
+    # Settings. Every text/reasoning call resolves through
+    # user_settings.default_gemini_model — see GeminiClient.default_model.
+    GEMINI_DEFAULT_MODEL: str = os.getenv("GEMINI_DEFAULT_MODEL", "gemini-3.1-flash-lite")
+
+    def gemini_api_key(self) -> str:
+        """Return the active Gemini API key from user settings.
+
+        Lazy-import the user settings module to avoid a circular import at
+        module load time.
+        """
+        try:
+            from services.settings_manager import user_settings
+            effective = user_settings.effective_gemini_api_key()
+            if effective:
+                return effective
+        except Exception:
+            pass
+        return self._GEMINI_API_KEY
+
     # Cache Gemini JSON responses on disk keyed by prompt hash to avoid repeating
     # identical API calls on retries/re-runs.
     GEMINI_CACHE_RESPONSES: bool = os.getenv("GEMINI_CACHE_RESPONSES", "true").lower() == "true"
@@ -89,10 +113,6 @@ class Config:
     TIKTOK_SESSION_DIR: str = os.getenv("TIKTOK_SESSION_DIR", "./output/.tiktok_sessions")
     # Posting runs headless; set false to watch/debug the automation in a window.
     TIKTOK_HEADLESS: bool = os.getenv("TIKTOK_HEADLESS", "true").lower() == "true"
-    # When the hardcoded uploader selectors fail to find an element, fall back to
-    # asking GEMINI_VISION_MODEL to locate it from a screenshot. Set false to
-    # disable (then a selector miss is a hard failure, as before).
-    TIKTOK_VISION_FALLBACK: bool = os.getenv("TIKTOK_VISION_FALLBACK", "true").lower() == "true"
     INSTAGRAM_APP_ID: str = os.getenv("INSTAGRAM_APP_ID", "")
     INSTAGRAM_APP_SECRET: str = os.getenv("INSTAGRAM_APP_SECRET", "")
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
@@ -111,7 +131,9 @@ class Config:
     GCS_SERVICE_ACCOUNT_JSON: str = os.getenv("GCS_SERVICE_ACCOUNT_JSON", "")
 
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
-    INTERMEDIATE_DIR: str = os.getenv("INTERMEDIATE_DIR", "/tmp/coreclip_intermediates")
+    # Scratch space on the platform's temp volume — %TEMP% on Windows, /tmp (or
+    # $TMPDIR) on macOS. Hardcoding "/tmp" would land in C:\tmp on Windows.
+    INTERMEDIATE_DIR: str = os.getenv("INTERMEDIATE_DIR", default_intermediate_dir())
     LOG_DIR: str = os.getenv("LOG_DIR", "./logs")
     FONT_DIR: str = os.getenv("FONT_DIR", "./fonts")
 
@@ -129,10 +151,15 @@ class Config:
     CLEANUP_TRANSCRIPTS: bool = os.getenv("CLEANUP_TRANSCRIPTS", "true").lower() == "true"
 
     def validate(self) -> None:
-        """Validate required configuration at application startup."""
-        if not self.GEMINI_API_KEY:
-            raise ValueError(
-                "GEMINI_API_KEY is required. Set it in your .env file or environment."
+        """Validate required configuration at application startup.
+
+        The API key may be supplied later through the UI settings, so a missing
+        key at startup is logged as a warning rather than a hard failure.
+        """
+        if not self.gemini_api_key():
+            logger = logging.getLogger("clipper")
+            logger.warning(
+                "No Gemini API key configured. Add one in Settings before starting a clipping job."
             )
         
         if self.INTERMEDIATE_DIR:

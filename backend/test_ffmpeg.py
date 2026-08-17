@@ -26,12 +26,17 @@ print(f"Hardware encoder selected and cached: {enc1}")
 print("\nTesting encode args generation...")
 args = build_encode_args(crf=23)
 print(f"Encode args: {args}")
-if enc1 in ["h264_videotoolbox", "hevc_videotoolbox", "h264_qsv"]:
-    assert "-q:v" in args, f"Hardware encoder {enc1} should use -q:v"
-elif enc1 == "h264_nvenc":
-    assert "-b:v" in args, f"Hardware encoder {enc1} should use -b:v"
-else:
-    assert "-crf" in args, f"Software encoder {enc1} should use -crf"
+# Each encoder family has its own rate-control vocabulary; assert the one the
+# selected encoder actually uses (see _encoder_quality_args).
+_EXPECTED_RATE_CONTROL_FLAG = {
+    "h264_videotoolbox": "-b:v",   # -q:v is unsupported on many builds
+    "hevc_videotoolbox": "-b:v",
+    "h264_nvenc": "-cq",
+    "h264_qsv": "-q:v",
+    "h264_amf": "-qp_i",
+}
+expected = _EXPECTED_RATE_CONTROL_FLAG.get(enc1, "-crf")  # libx264 fallback
+assert expected in args, f"Encoder {enc1} should use {expected}, got {args}"
 
 print("\nGetting video info for test.mp4...")
 try:

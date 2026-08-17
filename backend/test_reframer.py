@@ -17,6 +17,7 @@ Covers:
 import os
 import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -77,7 +78,7 @@ def test_end_to_end():
         print("  SKIP  test.mp4 not present")
         return
     from services.reframer import reframe_video
-    out = "/tmp/reframe_test_out.mp4"
+    out = os.path.join(tempfile.gettempdir(), "reframe_test_out.mp4")
     if os.path.exists(out):
         os.remove(out)
     ok = reframe_video("test.mp4", out, 1080, 1920)

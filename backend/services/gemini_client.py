@@ -16,13 +16,41 @@ class GeminiSafetyError(Exception):
 
 class GeminiClient:
     def __init__(self):
-        self.api_key = config.GEMINI_API_KEY
-        self.default_model = config.GEMINI_DEFAULT_MODEL
+        self._api_key: str | None = None
+        self.client = None
+        self._refresh_client()
+
+    @property
+    def default_model(self) -> str:
+        """The single source of truth for which model every text/reasoning call
+        uses: whatever the user selected in Settings.
+
+        Resolved live on each access — never captured at import time — so a model
+        change in Settings takes effect on the very next call without a restart."""
+        from services.settings_manager import user_settings
+        return user_settings.default_gemini_model
+
+    def _refresh_client(self) -> None:
+        """Re-initialize the underlying genai.Client if the effective API key
+        has changed (e.g. the user updated it in Settings)."""
+        effective_key = config.gemini_api_key()
+        if effective_key == self._api_key and self.client is not None:
+            return
+        self._api_key = effective_key
+        if not effective_key:
+            self.client = None
+            return
         try:
-            self.client = genai.Client(api_key=self.api_key)
+            self.client = genai.Client(api_key=effective_key)
+            logger.info("Gemini client initialized with user-supplied API key")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini Client: {e}")
             self.client = None
+
+    @property
+    def api_key(self) -> str | None:
+        self._refresh_client()
+        return self._api_key
 
     def _cache_key(self, model, system_prompt, user_message, temperature, response_schema):
         canonical = json.dumps({
@@ -81,8 +109,11 @@ class GeminiClient:
             pass
 
     def call(self, system_prompt, user_message, model=None, temperature=0.7, response_schema=None) -> dict:
+        self._refresh_client()
         if not self.client:
-            raise RuntimeError("Gemini Client not initialized")
+            raise RuntimeError(
+                "Gemini Client not initialized. Add a GEMINI_API_KEY in Settings."
+            )
 
         model_name = model or self.default_model
         cache_key = self._cache_key(model_name, system_prompt, user_message, temperature, response_schema)
@@ -172,6 +203,7 @@ class GeminiClient:
 
         Disabled unless config.TRENDING_HASHTAG is true.
         """
+        self._refresh_client()
         if not self.client or not config.TRENDING_HASHTAG:
             return None
 
@@ -222,6 +254,7 @@ class GeminiClient:
 
         Must never raise into the caller — any failure (no client, quota, parse
         error, no names) returns []."""
+        self._refresh_client()
         if not self.client or not text or not text.strip():
             return []
         system = (

@@ -1,4 +1,10 @@
+# CPU-only PyTorch wheels. torch arrives transitively (ultralytics for YOLO,
+# silero-vad for the reframer's speech gate) and the default index would pull
+# the multi-gigabyte CUDA build on machines that have no GPU to use it.
 --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Optional extras — speaker diarization and cloud upload — live in
+# requirements-optional.txt. Nothing in the active pipeline imports them.
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.9
@@ -13,12 +19,11 @@ numpy>=1.24.0
 yt-dlp>=2024.1.0
 opencv-python-headless>=4.9.0
 ultralytics>=8.2.0
-pyannote.audio>=3.1.0
+mediapipe>=0.10.0
 scenedetect>=0.6.4
 python_speech_features>=0.6
 silero-vad>=5.1
 scipy>=1.10.0
-boto3>=1.34.0
 python-dotenv>=1.0.0
 pydantic>=2.5.0
 httpx>=0.27.0

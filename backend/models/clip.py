@@ -18,7 +18,6 @@ class Clip(Base):
     end_time = Column(Float)
     duration = Column(Float)
     virality_score = Column(Float)
-    virality_rationale = Column(String)
     category = Column(String)
     
     status = Column(String, default="pending")

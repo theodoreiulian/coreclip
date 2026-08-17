@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Job, JobCreate, PaginatedResponse, Clip, ClipListResponse, ClipMetadataUpdate, Account, PostingPlan } from '../types';
+import { Job, JobCreate, PaginatedResponse, Clip, ClipListResponse, ClipMetadataUpdate, Account, PostingPlan, AppSettings, SettingsUpdate } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -46,5 +46,9 @@ export const schedulePosts = (
   account_ids: string[],
   clips: { clip_id: string; scheduled_time: string }[],
 ) => api.post(`/jobs/${jobId}/schedule`, { account_ids, clips });
+
+export const getSettings = () => api.get<AppSettings>('/settings');
+export const updateSettings = (data: SettingsUpdate) => api.put<AppSettings>('/settings', data);
+export const removeGeminiApiKey = () => api.delete<AppSettings>('/settings/gemini-api-key');
 
 export default api;

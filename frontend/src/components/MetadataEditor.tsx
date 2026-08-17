@@ -4,7 +4,6 @@ import { updateClipMetadata } from '../api/client';
 import { EditIcon, XIcon } from './Icons';
 
 export default function MetadataEditor({ clip, onClose }: { clip: Clip, onClose: () => void }) {
-  const [title, setTitle] = useState(clip.title || '');
   const [description, setDescription] = useState(clip.description || '');
   const [hashtags, setHashtags] = useState(clip.hashtags?.join(', ') || '');
   const [saving, setSaving] = useState(false);
@@ -13,7 +12,6 @@ export default function MetadataEditor({ clip, onClose }: { clip: Clip, onClose:
     setSaving(true);
     try {
       await updateClipMetadata(clip.id, {
-        title,
         description,
         hashtags: hashtags.split(',').map(s => s.trim()).filter(Boolean)
       });
@@ -53,12 +51,7 @@ export default function MetadataEditor({ clip, onClose }: { clip: Clip, onClose:
 
         <div className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-sm font-semibold">Title</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} className="input" />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold">Description</label>
+            <label className="mb-1.5 block text-sm font-semibold">Caption</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}

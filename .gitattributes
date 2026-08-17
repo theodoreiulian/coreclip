@@ -1,0 +1,31 @@
+# Line endings must not depend on which OS cloned the repo.
+#
+# A Windows clone with core.autocrlf=true (the default from Git for Windows)
+# would otherwise rewrite start.sh with CRLF, and bash reports the trailing \r
+# as part of the command — "\r: command not found" — breaking the macOS
+# launcher for anyone who shares a checkout. Pin every script to the endings
+# its interpreter requires.
+
+* text=auto
+
+*.sh   text eol=lf
+*.ps1  text eol=lf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# Binary assets: never touch these.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.mp4  binary
+*.wav  binary
+*.ttf  binary
+*.otf  binary
+*.pt   binary
+*.pth  binary
+*.tflite        binary
+*.caffemodel    binary
+*.sqlite3       binary

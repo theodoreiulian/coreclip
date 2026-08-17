@@ -57,7 +57,7 @@ def _write_qa(output_path: str, decisions, tracks, shots) -> None:
             "center_pct": round(100.0 * counts.get("center", 0) / total, 1),
         }
         qa_path = os.path.join(os.path.dirname(output_path), "reframe_qa.json")
-        with open(qa_path, "w") as f:
+        with open(qa_path, "w", encoding="utf-8") as f:
             json.dump(qa, f, indent=2)
         logger.info(f"Reframe QA: speaker={qa['speaker_pct']}% "
                     f"held={qa['held_pct']}% broll={qa['broll_pct']}% "

@@ -86,7 +86,7 @@ def post_clip(self, scheduled_post_id: str):
 
         attempt = self.request.retries + 1
         logger.info(
-            f"▶ Posting clip '{clip.title or clip.id}' to {sp.platform} "
+            f"▶ Posting clip {clip.clip_index} ({clip.id}) to {sp.platform} "
             f"account @{account.display_name} (attempt {attempt}/{self.max_retries + 1})"
         )
         try:
@@ -104,7 +104,6 @@ def post_clip(self, scheduled_post_id: str):
             logger.info("Video validated OK")
 
             metadata = {
-                "title": clip.title,
                 "description": clip.description,
                 "hashtags": clip.hashtags,
                 "platform_variants": clip.platform_variants,

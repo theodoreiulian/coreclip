@@ -5,7 +5,6 @@ from datetime import datetime
 class JobCreate(BaseModel):
     youtube_url: str
     target_platforms: List[str] = ["tiktok", "instagram", "youtube", "snapchat"]
-    gemini_model: str = "gemini-2.5-flash"
 
 class JobResponse(BaseModel):
     id: str
@@ -38,13 +37,11 @@ class ClipResponse(BaseModel):
     end_time: Optional[float] = None
     duration: Optional[float] = None
     virality_score: Optional[float] = None
-    virality_rationale: Optional[str] = None
     category: Optional[str] = None
     status: str
     raw_clip_path: Optional[str] = None
     vertical_clip_path: Optional[str] = None
     final_clip_path: Optional[str] = None
-    title: Optional[str] = None
     description: Optional[str] = None
     hashtags: Optional[List[str]] = None
     platform_variants: Optional[Dict[str, Any]] = None
@@ -57,7 +54,6 @@ class ClipResponse(BaseModel):
         from_attributes = True
 
 class ClipMetadataUpdate(BaseModel):
-    title: Optional[str] = None
     description: Optional[str] = None
     hashtags: Optional[List[str]] = None
     platform_variants: Optional[Dict[str, Any]] = None

@@ -17,6 +17,7 @@ import tempfile
 from services.reframer.camera import CropFrame
 from services.reframer.detect import VideoMeta
 from services.ffmpeg_client import _get_ffmpeg_binary, build_encode_args
+from utils.platform_compat import ffmpeg_filter_path, no_window_kwargs
 
 logger = logging.getLogger("clipper")
 
@@ -52,14 +53,16 @@ def render_clip(
         vf = f"crop=w={crop_w}:h={crop_h}:x={trajectory[0].crop_x}:y={trajectory[0].crop_y},scale={target_w}:{target_h}"
     else:
         fd, sendcmd_path = tempfile.mkstemp(suffix=".sendcmd", text=True)
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             for cf in trajectory:
                 t = cf.frame_idx / fps
                 f.write(f"{t:.3f} crop x {cf.crop_x}, crop y {cf.crop_y};\n")
-        
-        # Escape single quotes in path for FFmpeg filtergraph
-        escaped_path = sendcmd_path.replace("'", r"\'")
-        vf = f"sendcmd=f='{escaped_path}',crop=w={crop_w}:h={crop_h}:x={trajectory[0].crop_x}:y={trajectory[0].crop_y},scale={target_w}:{target_h}"
+
+        # The temp path goes straight into a filtergraph, so it has to survive
+        # that parser: on Windows it is a backslash-and-colon path, which the
+        # graph would otherwise read as escapes and option separators.
+        escaped_path = ffmpeg_filter_path(sendcmd_path)
+        vf = f"sendcmd=f={escaped_path},crop=w={crop_w}:h={crop_h}:x={trajectory[0].crop_x}:y={trajectory[0].crop_y},scale={target_w}:{target_h}"
 
     cmd = [
         ffmpeg_bin, "-y",
@@ -78,6 +81,7 @@ def render_clip(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
+        **no_window_kwargs(),
     )
     
     _, stderr_data = process.communicate()

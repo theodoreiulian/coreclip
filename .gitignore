@@ -7,6 +7,8 @@
 .env.local
 .env.*.local
 token_store.json
+# Written by the Settings UI and holds the user's live Gemini API key.
+user_settings.json
 *.pem
 *.key
 
@@ -53,12 +55,13 @@ logs/
 *.log
 
 # ---------------------- Model Weights -----------------------
-# Large binary files — users download these at runtime
+# Binary weights are fetched at runtime, not committed. face_detector verifies
+# each download against a pinned SHA-256 and re-fetches on mismatch, so an
+# empty .models/ on a fresh clone is the expected state.
 *.pt
 *.pth
 *.onnx
-backend/.models/*.caffemodel
-backend/.models/*.prototxt
+backend/.models/
 
 # ---------------------- TikTok Sessions ---------------------
 .tiktok_sessions/

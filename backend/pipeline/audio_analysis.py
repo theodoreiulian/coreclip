@@ -69,7 +69,7 @@ def compute_features(job: Job, db: Session) -> str:
     
     job_output_dir = os.path.join(config.OUTPUT_DIR, job.id)
     features_path = os.path.join(job_output_dir, 'audio_features.json')
-    with open(features_path, 'w') as f:
+    with open(features_path, 'w', encoding='utf-8') as f:
         json.dump(features, f)
         
     logger.info(f"Audio analysis complete. Found {len(events)} events.")

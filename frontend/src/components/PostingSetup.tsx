@@ -298,7 +298,7 @@ export default function PostingSetup({ job, clips, onUpdate }: { job: Job; clips
           const posts = byClip[clip.id] || [];
           return (
             <div key={clip.id} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-              <div className="mb-3 font-display font-semibold text-white">{clip.title || `Clip ${clip.clip_index}`}</div>
+              <div className="mb-3 font-display font-semibold text-white">{`Clip ${clip.clip_index}`}</div>
               <div className="space-y-2">
                 {posts.map(p => (
                   <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
@@ -514,7 +514,7 @@ export default function PostingSetup({ job, clips, onUpdate }: { job: Job; clips
           {plan.clips.map(clip => (
             <div key={clip.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
               <span className="flex-1 truncate text-sm">
-                {clip.title || `Clip ${clip.clip_index}`}
+                {`Clip ${clip.clip_index}`}
               </span>
               <input
                 type="datetime-local"

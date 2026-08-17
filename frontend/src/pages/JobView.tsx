@@ -67,7 +67,7 @@ export default function JobView() {
   );
 
   const showPosting = POSTING_STATUSES.includes(job.status);
-  const missingMetadata = clips.some(clip => !clip.title);
+  const missingMetadata = clips.some(clip => !clip.description);
 
   const handleGenerateMetadata = async () => {
     if (!id || generatingMeta) return;

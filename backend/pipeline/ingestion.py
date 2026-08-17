@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from models.job import Job
 from services import whisper_client
 from config import config
+from utils.platform_compat import link_or_copy
 
 logger = logging.getLogger("clipper")
 
@@ -32,9 +33,7 @@ def download_video(job: Job, db: Session):
             job.video_title = info.get('title')
             job.video_duration_seconds = float(info.get('duration', 0))
         
-        if os.path.exists(job.source_video_path):
-            os.remove(job.source_video_path)
-        os.symlink(os.path.abspath(cache_path), job.source_video_path)
+        link_or_copy(cache_path, job.source_video_path)
         db.commit()
         return
 
@@ -68,14 +67,17 @@ def download_video(job: Job, db: Session):
                 raise IngestionError(f"Downloaded video file not found or is empty: {actual_downloaded_path}")
             
             if actual_downloaded_path != cache_path:
-                os.rename(actual_downloaded_path, cache_path)
-                
-            if os.path.exists(job.source_video_path):
-                os.remove(job.source_video_path)
-            os.symlink(os.path.abspath(cache_path), job.source_video_path)
-            
+                # os.replace, not os.rename: Windows raises FileExistsError when
+                # the destination is already there (a stale cache entry).
+                os.replace(actual_downloaded_path, cache_path)
+
+            strategy = link_or_copy(cache_path, job.source_video_path)
+
             db.commit()
-            logger.info(f"Downloaded video: {job.video_title} ({job.video_duration_seconds}s) to {cache_path} and symlinked to {job.source_video_path}")
+            logger.info(
+                f"Downloaded video: {job.video_title} ({job.video_duration_seconds}s) "
+                f"to {cache_path} and linked ({strategy}) to {job.source_video_path}"
+            )
             
     except yt_dlp.utils.DownloadError as e:
         logger.error(f"Download failed: {e}")

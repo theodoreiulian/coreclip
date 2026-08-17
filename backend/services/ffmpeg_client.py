@@ -1,12 +1,18 @@
 import os
-import platform
 import subprocess
 import json
 import logging
-import shutil
 from typing import Optional
 
 from config import config
+from utils.platform_compat import (
+    IS_MACOS,
+    IS_WINDOWS,
+    exe,
+    ffmpeg_filter_path,
+    find_executables,
+    no_window_kwargs,
+)
 
 logger = logging.getLogger("clipper")
 
@@ -23,54 +29,72 @@ _ENCODERS_LIST: Optional[list[str]] = None
 _SELECTED_ENCODER: Optional[str] = None
 
 
-def _has_ass_filter(ffmpeg_path: str) -> bool:
-    """Check whether the given ffmpeg binary was compiled with libass (ass filter)."""
+def _probe(cmd: list[str], timeout: int = 15) -> Optional[str]:
+    """Run a short ffmpeg/ffprobe capability query, returning stdout or None."""
     try:
         result = subprocess.run(
-            [ffmpeg_path, "-filters"],
+            cmd,
             capture_output=True,
             text=True,
             check=False,
-            timeout=10,
+            timeout=timeout,
+            **no_window_kwargs(),
         )
-        # The output line for the ass filter looks like:
-        #   .. ass             V->V       Render ASS ...
-        for line in result.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 2 and parts[1] == "ass":
-                return True
+        return result.stdout
     except Exception:
-        pass
+        return None
+
+
+def _has_ass_filter(ffmpeg_path: str) -> bool:
+    """Check whether the given ffmpeg binary was compiled with libass (ass filter)."""
+    stdout = _probe([ffmpeg_path, "-filters"])
+    if not stdout:
+        return False
+    # The output line for the ass filter looks like:
+    #   .. ass             V->V       Render ASS ...
+    for line in stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "ass":
+            return True
     return False
 
 
 def _get_ffmpeg_binary() -> str:
-    """Return an ffmpeg binary path that supports the ass filter.
+    """Return an absolute path to an ffmpeg binary, preferring one with libass.
 
-    Falls back to Homebrew's ffmpeg-full on macOS if the default ffmpeg
-    lacks libass support. The discovered path is cached for the process.
+    Every install location is probed in preference order (PATH first, then the
+    platform's package-manager directories) and the first build that supports
+    the `ass` filter wins, since caption burning needs it. If none does we still
+    return a working ffmpeg so the rest of the pipeline runs — `_ensure_ass_support`
+    raises a targeted error only when a caption burn is actually attempted.
+
+    Resolving to an absolute path rather than the bare name "ffmpeg" is what
+    makes the desktop app work: a GUI-launched process inherits a minimal PATH
+    that contains neither Homebrew nor most Windows install dirs.
     """
     global _FFMPEG_BIN
     if _FFMPEG_BIN is not None:
         return _FFMPEG_BIN
 
-    default = "ffmpeg"
-    if _has_ass_filter(default):
-        _FFMPEG_BIN = default
+    candidates = find_executables("ffmpeg")
+    if not candidates:
+        # Nothing found; fall back to the bare name so the failure surfaces as a
+        # clear "not found in PATH" error at call time rather than at import.
+        _FFMPEG_BIN = exe("ffmpeg")
         return _FFMPEG_BIN
 
-    # Common keg-only paths for Homebrew's ffmpeg-full formula
-    candidates = [
-        "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg",   # Apple Silicon
-        "/usr/local/opt/ffmpeg-full/bin/ffmpeg",      # Intel Mac
-    ]
     for candidate in candidates:
-        if os.path.exists(candidate) and _has_ass_filter(candidate):
-            logger.info(f"Using fallback ffmpeg with libass support: {candidate}")
+        if _has_ass_filter(candidate):
+            if candidate != candidates[0]:
+                logger.info(f"Using ffmpeg with libass support: {candidate}")
             _FFMPEG_BIN = candidate
             return _FFMPEG_BIN
 
-    _FFMPEG_BIN = default
+    logger.warning(
+        f"No ffmpeg build with libass found; using {candidates[0]} "
+        "(caption burning will fail until a libass-enabled build is installed)"
+    )
+    _FFMPEG_BIN = candidates[0]
     return _FFMPEG_BIN
 
 
@@ -80,16 +104,36 @@ def _get_ffprobe_binary() -> str:
     if _FFPROBE_BIN is not None:
         return _FFPROBE_BIN
 
-    ffmpeg_path = _get_ffmpeg_binary()
-    if ffmpeg_path == "ffmpeg":
-        _FFPROBE_BIN = "ffprobe"
+    # Prefer the sibling of the chosen ffmpeg so both come from the same build.
+    sibling = os.path.join(os.path.dirname(_get_ffmpeg_binary()), exe("ffprobe"))
+    if os.path.isfile(sibling):
+        _FFPROBE_BIN = sibling
         return _FFPROBE_BIN
-    ffprobe = os.path.join(os.path.dirname(ffmpeg_path), "ffprobe")
-    if os.path.exists(ffprobe):
-        _FFPROBE_BIN = ffprobe
-        return _FFPROBE_BIN
-    _FFPROBE_BIN = "ffprobe"
+
+    candidates = find_executables("ffprobe")
+    _FFPROBE_BIN = candidates[0] if candidates else exe("ffprobe")
     return _FFPROBE_BIN
+
+
+def _install_hint() -> str:
+    """Per-OS instructions for getting a libass-enabled FFmpeg."""
+    if IS_WINDOWS:
+        return (
+            "On Windows, install a full FFmpeg build (all of these include libass):\n"
+            "  winget install Gyan.FFmpeg\n"
+            "  choco install ffmpeg-full\n"
+            "  scoop install ffmpeg\n"
+            "Then open a new terminal so PATH picks it up."
+        )
+    if IS_MACOS:
+        return (
+            "On macOS with Homebrew, install ffmpeg-full:\n"
+            "  brew install ffmpeg-full\n"
+            "Then add it to your PATH (ffmpeg-full is keg-only):\n"
+            '  export PATH="/opt/homebrew/opt/ffmpeg-full/bin:$PATH"   # Apple Silicon\n'
+            '  export PATH="/usr/local/opt/ffmpeg-full/bin:$PATH"     # Intel Mac'
+        )
+    return "Install an FFmpeg build compiled with libass (e.g. apt install ffmpeg)."
 
 
 def _ensure_ass_support() -> None:
@@ -98,12 +142,7 @@ def _ensure_ass_support() -> None:
     if not _has_ass_filter(ffmpeg_path):
         raise FFmpegError(
             "FFmpeg was compiled without libass support. "
-            "Caption burning requires the 'ass' filter.\n"
-            "On macOS with Homebrew, install ffmpeg-full:\n"
-            "  brew install ffmpeg-full\n"
-            "Then add it to your PATH (ffmpeg-full is keg-only):\n"
-            "  export PATH=\"/opt/homebrew/opt/ffmpeg-full/bin:$PATH\"   # Apple Silicon\n"
-            "  export PATH=\"/usr/local/opt/ffmpeg-full/bin:$PATH\"     # Intel Mac"
+            "Caption burning requires the 'ass' filter.\n" + _install_hint()
         )
 
 
@@ -113,22 +152,15 @@ def _list_encoders() -> list[str]:
     if _ENCODERS_LIST is not None:
         return _ENCODERS_LIST
 
-    ffmpeg_path = _get_ffmpeg_binary()
     encoders: list[str] = []
-    try:
-        result = subprocess.run(
-            [ffmpeg_path, "-encoders"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-        for line in result.stdout.splitlines():
+    stdout = _probe([_get_ffmpeg_binary(), "-encoders"])
+    if stdout is None:
+        logger.warning("Could not enumerate ffmpeg encoders; assuming software encoding")
+    else:
+        for line in stdout.splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[0].startswith("V"):
                 encoders.append(parts[1])
-    except Exception as e:
-        logger.warning(f"Could not enumerate ffmpeg encoders: {e}")
 
     _ENCODERS_LIST = encoders
     return _ENCODERS_LIST
@@ -136,14 +168,24 @@ def _list_encoders() -> list[str]:
 
 # ── Encoder selection ────────────────────────────────────────────────────
 
-# Priority order is intentionally conservative: videotoolbox on macOS, then
-# NVENC, then QSV, then the bullet-proof software fallback.
-_ENCODER_PRIORITY = [
+# Priority order is per-OS and intentionally conservative. VideoToolbox is the
+# only hardware path on macOS; on Windows the GPU vendor decides, so we try
+# NVIDIA (NVENC), then Intel (QSV), then AMD (AMF), and finally the
+# bullet-proof software fallback. Listing an encoder that doesn't exist on the
+# host is harmless — selection intersects this list with what ffmpeg reports.
+_ENCODER_PRIORITY_MACOS = [
     "h264_videotoolbox",
     "hevc_videotoolbox",
+]
+_ENCODER_PRIORITY_OTHER = [
     "h264_nvenc",
     "h264_qsv",
+    "h264_amf",
 ]
+
+_ENCODER_PRIORITY = (
+    _ENCODER_PRIORITY_MACOS if IS_MACOS else _ENCODER_PRIORITY_OTHER
+)
 
 
 def _detect_hardware_encoder() -> str:
@@ -192,6 +234,11 @@ def _encoder_quality_args(codec: str, preset: str, crf: int) -> list[str]:
         return ["-preset", nvenc_preset, "-cq", str(crf), "-b:v", "0"]
     if codec == "h264_qsv":
         return ["-preset", preset, "-q:v", str(crf)]
+    if codec == "h264_amf":
+        # AMF has its own vocabulary: quality presets are speed/balanced/quality
+        # and rate control is -qp_i/-qp_p rather than CRF.
+        amf_quality = "speed" if preset in {"ultrafast", "superfast", "veryfast"} else "balanced"
+        return ["-quality", amf_quality, "-rc", "cqp", "-qp_i", str(crf), "-qp_p", str(crf)]
     # libx264 / software fallback
     return ["-preset", preset, "-crf", str(crf)]
 
@@ -246,9 +293,16 @@ def run_ffmpeg(args: list[str], description: str) -> subprocess.CompletedProcess
             capture_output=True,
             text=True,
             check=False,
+            # ffmpeg writes non-ASCII (stream metadata, filenames) to stderr;
+            # decoding it with the Windows ANSI codepage would raise mid-run.
+            encoding="utf-8",
+            errors="replace",
+            **no_window_kwargs(),
         )
     except FileNotFoundError:
-        raise FFmpegError(f"ffmpeg executable not found in PATH: {ffmpeg_bin}")
+        raise FFmpegError(
+            f"ffmpeg executable not found: {ffmpeg_bin}\n" + _install_hint()
+        )
 
     if result.returncode != 0:
         # If the command failed and the filter chain contains 'ass=', check
@@ -273,10 +327,15 @@ def run_ffprobe(args: list[str]) -> dict:
             capture_output=True,
             text=True,
             check=True,
+            encoding="utf-8",
+            errors="replace",
+            **no_window_kwargs(),
         )
         return json.loads(result.stdout)
     except FileNotFoundError:
-        raise FFmpegError(f"ffprobe executable not found in PATH: {ffprobe_bin}")
+        raise FFmpegError(
+            f"ffprobe executable not found: {ffprobe_bin}\n" + _install_hint()
+        )
     except subprocess.CalledProcessError as e:
         logger.error(f"ffprobe failed: {e.stderr}")
         raise FFmpegError(f"ffprobe failed: {e.stderr}")
@@ -369,8 +428,8 @@ def build_final_burn_args(
     fonts_dir: str,
 ) -> list[str]:
     """Build FFmpeg args for the final caption burn pass (high quality)."""
-    escaped_ass_path = ass_path.replace("\\", "/").replace(":", "\\:").replace(",", "\\,")
-    escaped_fonts_dir = fonts_dir.replace("\\", "/").replace(":", "\\:").replace(",", "\\,")
+    escaped_ass_path = ffmpeg_filter_path(ass_path)
+    escaped_fonts_dir = ffmpeg_filter_path(fonts_dir)
 
     codec = _detect_hardware_encoder()
     quality = _encoder_quality_args(

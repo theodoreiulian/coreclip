@@ -13,14 +13,16 @@ class TokenManager:
 
     def _load(self):
         if os.path.exists(self.store_path):
-            with open(self.store_path, 'r') as f:
+            with open(self.store_path, 'r', encoding='utf-8') as f:
                 self.tokens = json.load(f)
         else:
             self.tokens = {}
 
     def _save(self):
-        os.makedirs(os.path.dirname(self.store_path), exist_ok=True)
-        with open(self.store_path, 'w') as f:
+        # dirname("token_store.json") is "" — makedirs would raise on it.
+        parent = os.path.dirname(os.path.abspath(self.store_path))
+        os.makedirs(parent, exist_ok=True)
+        with open(self.store_path, 'w', encoding='utf-8') as f:
             json.dump(self.tokens, f, indent=2)
 
     def get_token(self, platform: str) -> dict | None:

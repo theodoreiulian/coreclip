@@ -8,7 +8,6 @@ published immediately via the Post button.
 """
 import logging
 import os
-import random
 
 from services.platform_clients.base import PlatformClient, ValidationResult, UploadResult, PostStatus
 from services.ffmpeg_client import get_video_info
@@ -18,9 +17,6 @@ logger = logging.getLogger("clipper")
 
 MAX_CAPTION = 2200
 MAX_DURATION_SEC = 600
-
-# The posted caption is intentionally just laughing emojis + hashtags — no text.
-LAUGH_EMOJIS = ["😂", "🤣"]
 
 
 def _truncate(s: str, limit: int) -> str:
@@ -41,12 +37,34 @@ class TikTokClient(PlatformClient):
         return ValidationResult(True)
 
     def _build_caption(self, metadata: dict) -> str:
-        # No text caption: just 2–4 laughing emojis (one type, repeated) followed
-        # by the canonical hashtags. Generated metadata captions are ignored here.
-        laugh = random.choice(LAUGH_EMOJIS) * random.randint(2, 4)
+        """Caption = the generated caption text, then the canonical hashtags.
+
+        Prefers the TikTok-specific variant over the generic description. Tags go
+        last and are never truncated — they're the discovery mechanism, so when the
+        whole thing would overflow it's the TEXT that gives way, not the tags."""
+        variants = metadata.get("platform_variants") or {}
+        text = ""
+        if isinstance(variants, dict):
+            text = str(variants.get("tiktok") or "").strip()
+        if not text:
+            text = str(metadata.get("description") or "").strip()
+
+        # A stray '#' in the caption text would be typed as a hashtag by
+        # _set_caption — popover wait and all. Tags are appended separately.
+        text = text.replace("#", "").strip()
+
         tags = metadata.get("hashtags") or []
         tag_str = " ".join(f"#{str(t).lstrip('#')}" for t in tags if str(t).strip())
-        return _truncate(f"{laugh} {tag_str}".strip(), MAX_CAPTION)
+
+        if not text:
+            return _truncate(tag_str, MAX_CAPTION)
+        if not tag_str:
+            return _truncate(text, MAX_CAPTION)
+
+        budget = MAX_CAPTION - len(tag_str) - 1   # -1 for the separating space
+        if budget <= 0:
+            return _truncate(tag_str, MAX_CAPTION)
+        return f"{_truncate(text, budget).strip()} {tag_str}"
 
     def upload(self, video_path: str, metadata: dict) -> UploadResult:
         session_path = metadata.get("account_session_path")

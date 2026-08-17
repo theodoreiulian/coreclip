@@ -37,12 +37,12 @@ const ClipCard = memo(function ClipCard({ clip, onUpdate }: { clip: Clip, onUpda
 
   return (
     <div className="glass sheen flex flex-col gap-4 p-4">
-      <ClipPreview clipId={clip.id} />
+      <ClipPreview clip={clip} />
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h4 className="truncate font-display text-base font-semibold text-white">
-            {clip.title || `Clip ${clip.clip_index}`}
+            {`Clip ${clip.clip_index}`}
           </h4>
           <p className="mt-0.5 line-clamp-2 text-sm text-[var(--text-dim)]">{clip.description}</p>
         </div>
@@ -56,11 +56,6 @@ const ClipCard = memo(function ClipCard({ clip, onUpdate }: { clip: Clip, onUpda
             {clip.duration?.toFixed(1)}s
           </span>
         </div>
-      </div>
-
-      <div className="max-h-24 overflow-y-auto rounded-xl border border-white/[0.06] bg-black/25 p-3 text-sm text-[var(--text-dim)]">
-        <span className="font-semibold text-blue-300">Rationale · </span>
-        {clip.virality_rationale}
       </div>
 
       <div className="flex flex-wrap gap-1.5">

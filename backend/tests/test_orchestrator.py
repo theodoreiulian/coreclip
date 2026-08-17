@@ -6,10 +6,10 @@ import pipeline.orchestrator as orch
 from config import config
 
 
-def test_stages_no_metadata_stage():
-    # Metadata generation is lazy (POST /jobs/{id}/generate-metadata), not a pipeline stage.
-    assert orch.STAGES == ["ingesting", "analyzing", "clipping", "processing", "captioning"]
-    assert "generating_metadata" not in orch.STAGES
+def test_stages_include_metadata_stage():
+    assert orch.STAGES == [
+        "ingesting", "analyzing", "clipping", "processing", "captioning", "generating_metadata"
+    ]
 
 
 def test_batch_publisher_flushes_on_max_size(monkeypatch):

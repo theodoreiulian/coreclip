@@ -27,13 +27,11 @@ export interface Clip {
   end_time?: number;
   duration?: number;
   virality_score?: number;
-  virality_rationale?: string;
   category?: string;
   status: string;
   raw_clip_path?: string;
   vertical_clip_path?: string;
   final_clip_path?: string;
-  title?: string;
   description?: string;
   hashtags?: string[];
   platform_variants?: Record<string, any>;
@@ -46,11 +44,9 @@ export interface Clip {
 export interface JobCreate {
   youtube_url: string;
   target_platforms?: string[];
-  gemini_model?: string;
 }
 
 export interface ClipMetadataUpdate {
-  title?: string;
   description?: string;
   hashtags?: string[];
   platform_variants?: Record<string, any>;
@@ -98,4 +94,15 @@ export interface PostingPlan {
   clips: Clip[];
   accounts: Account[];
   scheduled_posts: ScheduledPost[];
+}
+
+export interface AppSettings {
+  default_gemini_model: string;
+  gemini_api_key_set: boolean;
+  gemini_api_key_last4?: string;
+}
+
+export interface SettingsUpdate {
+  gemini_api_key?: string | null;
+  default_gemini_model?: string;
 }

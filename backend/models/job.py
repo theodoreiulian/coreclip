@@ -21,7 +21,7 @@ class Job(Base):
     status = Column(String, default="queued", index=True)
     failed_stage = Column(String)
     target_platforms = Column(JSON)
-    gemini_model = Column(String, default="gemini-2.5-flash")
+    gemini_model = Column(String, default="gemini-3.1-flash-lite")
     
     source_video_path = Column(String)
     audio_path = Column(String)

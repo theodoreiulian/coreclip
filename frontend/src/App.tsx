@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import NewJob from './pages/NewJob';
 import JobView from './pages/JobView';
 import Logs from './pages/Logs';
+import Settings from './pages/Settings';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="new" element={<NewJob />} />
           <Route path="jobs/:id" element={<JobView />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

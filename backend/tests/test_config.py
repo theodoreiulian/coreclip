@@ -77,17 +77,30 @@ def test_log_level_default():
     assert cfg.LOG_LEVEL == "INFO"
 
 
-def test_gemini_api_key_validation_raises_when_missing():
-    cfg = _reload_config().config
-    with pytest.raises(ValueError, match="GEMINI_API_KEY"):
-        cfg.validate()
+# The API key used to be an env-only setting that `validate()` hard-failed on.
+# The Settings UI superseded that: the key is now supplied at runtime and
+# persisted to user_settings.json, so a missing key at startup is a warning
+# rather than a fatal error — the server has to boot for the user to be able to
+# enter one. These tests assert that current contract.
 
 
-def test_gemini_api_key_validation_passes_when_set(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+def test_validate_warns_but_does_not_raise_without_a_key(monkeypatch):
     cfg = _reload_config().config
+    monkeypatch.setattr(cfg, "gemini_api_key", lambda: "")
+    cfg.validate()  # must not raise — startup has to survive a missing key
+
+
+def test_gemini_api_key_resolves_from_user_settings(monkeypatch):
+    cfg = _reload_config().config
+    monkeypatch.setattr(cfg, "_GEMINI_API_KEY", "", raising=False)
+
+    import services.settings_manager as sm
+    monkeypatch.setattr(
+        sm.user_settings, "effective_gemini_api_key", lambda: "key-from-settings"
+    )
+
+    assert cfg.gemini_api_key() == "key-from-settings"
     cfg.validate()
-    assert cfg.GEMINI_API_KEY == "test-key"
 
 
 def test_env_overrides_are_applied(monkeypatch):

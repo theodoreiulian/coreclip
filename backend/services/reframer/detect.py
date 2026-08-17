@@ -63,30 +63,9 @@ class FrameDetections:
 # ── Model loaders (lazy, process-global) ───────────────────────────────
 
 
-_face_net = None
-_face_net_loaded = False
-
-
 def _load_face_net():
-    global _face_net, _face_net_loaded
-    if _face_net_loaded:
-        return _face_net
-    _face_net_loaded = True
-    try:
-        model_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            ".models",
-        )
-        proto = os.path.join(model_dir, "deploy.prototxt")
-        model = os.path.join(model_dir, "res10_300x300_ssd.caffemodel")
-        if os.path.exists(proto) and os.path.exists(model):
-            _face_net = cv2.dnn.readNetFromCaffe(proto, model)
-            logger.info("Reframer face detector loaded")
-        else:
-            logger.warning(f"Face detector model files missing in {model_dir}")
-    except Exception as e:
-        logger.warning(f"Face detector load failed: {e}")
-    return _face_net
+    """Legacy DNN loader; kept for API compatibility but unused by default."""
+    return None
 
 
 _yolo = None
@@ -100,7 +79,14 @@ def _load_yolo():
     _yolo_loaded = True
     try:
         from ultralytics import YOLO
-        _yolo = YOLO("yolov8n.pt")
+        # Absolute path: a bare name resolves against the working directory, so
+        # a worker started from anywhere but backend/ would silently re-download
+        # the weights instead of using the vendored backend/yolov8n.pt.
+        weights = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "yolov8n.pt",
+        )
+        _yolo = YOLO(weights if os.path.exists(weights) else "yolov8n.pt")
         logger.info("Reframer person detector loaded")
     except Exception as e:
         logger.warning(f"YOLO load failed: {e}")
@@ -111,25 +97,42 @@ def _load_yolo():
 
 
 def detect_faces(frame: np.ndarray, conf_threshold: float) -> list:
+    """Detect faces using MediaPipe BlazeFace (primary) or DNN/Haar fallbacks."""
+    from services.face_detector import detect_faces_mediapipe
+    faces = detect_faces_mediapipe(frame, conf_threshold=conf_threshold)
+    if faces:
+        return faces
+
+    # Legacy OpenCV DNN fallback (rarely available in OpenCV 5 headless builds)
     net = _load_face_net()
-    if net is None:
-        return []
     h, w = frame.shape[:2]
-    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
-    net.setInput(blob)
-    det = net.forward()
-    faces = []
-    for i in range(det.shape[2]):
-        c = float(det[0, 0, i, 2])
-        if c < conf_threshold:
-            continue
-        x1 = int(max(0.0, det[0, 0, i, 3]) * w)
-        y1 = int(max(0.0, det[0, 0, i, 4]) * h)
-        x2 = int(min(1.0, det[0, 0, i, 5]) * w)
-        y2 = int(min(1.0, det[0, 0, i, 6]) * h)
-        if x2 - x1 >= 8 and y2 - y1 >= 8:
-            faces.append((x1, y1, x2, y2, c))
-    return faces
+    if net is not None:
+        blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300), (104.0, 177.0, 123.0))
+        net.setInput(blob)
+        det = net.forward()
+        for i in range(det.shape[2]):
+            c = float(det[0, 0, i, 2])
+            if c < conf_threshold:
+                continue
+            x1 = int(max(0.0, det[0, 0, i, 3]) * w)
+            y1 = int(max(0.0, det[0, 0, i, 4]) * h)
+            x2 = int(min(1.0, det[0, 0, i, 5]) * w)
+            y2 = int(min(1.0, det[0, 0, i, 6]) * h)
+            if x2 - x1 >= 8 and y2 - y1 >= 8:
+                faces.append((x1, y1, x2, y2, c))
+        return faces
+
+    # Last-resort Haar cascade
+    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    if os.path.exists(cascade_path):
+        cascade = cv2.CascadeClassifier(cascade_path)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        raw = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        for x, y, fw, fh in raw:
+            faces.append((int(x), int(y), int(x + fw), int(y + fh), 0.8))
+        return faces
+
+    return []
 
 
 def detect_persons(frame: np.ndarray, conf_threshold: float) -> list:
@@ -169,6 +172,45 @@ def associate_face_to_person(face, persons) -> BBox:
     fh = fy2 - fy1
     return (int(fx1 - fw * 0.5), int(fy1 - fh * 0.3),
             int(fx2 + fw * 0.5), int(fy2 + fh * 7.0))
+
+
+_FACE_NET_AVAILABLE: bool | None = None
+
+
+def _face_detector_available() -> bool:
+    """Return True if a real face detector (MediaPipe or DNN/Haar) is available."""
+    global _FACE_NET_AVAILABLE
+    if _FACE_NET_AVAILABLE is None:
+        from services.face_detector import _load_mediapipe_detector
+        available = _load_mediapipe_detector() is not None
+        if not available:
+            available = _load_face_net() is not None
+        if not available:
+            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            available = os.path.exists(cascade_path)
+        _FACE_NET_AVAILABLE = available
+    return _FACE_NET_AVAILABLE
+
+
+def _synthetic_faces_from_persons(persons: list) -> list:
+    """
+    When cv2.dnn.readNetFromCaffe is unavailable, derive face regions from
+    YOLO person boxes so the speaker-tracker still has heads to follow.
+    Uses the upper ~35% of the body box, centered horizontally.
+    """
+    synthetic = []
+    for px1, py1, px2, py2, conf in persons:
+        pw = px2 - px1
+        ph = py2 - py1
+        if pw <= 0 or ph <= 0:
+            continue
+        # Face region: top of the body, ~head/shoulders
+        fx1 = int(px1 + pw * 0.2)
+        fx2 = int(px2 - pw * 0.2)
+        fy1 = int(py1 + ph * 0.05)
+        fy2 = int(py1 + ph * 0.35)
+        synthetic.append((fx1, fy1, fx2, fy2, conf))
+    return synthetic
 
 
 # ── Letterbox detection ────────────────────────────────────────────────
@@ -223,6 +265,7 @@ def analyze_video(video_path: str, cfg) -> tuple[VideoMeta, dict[int, FrameDetec
     if not cap.isOpened():
         raise RuntimeError(f"analyze_video: cannot open {video_path}")
 
+    _warned_fallback = False
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -273,6 +316,14 @@ def analyze_video(video_path: str, cfg) -> tuple[VideoMeta, dict[int, FrameDetec
 
             faces = detect_faces(small_frame, cfg.face_conf)
             persons = detect_persons(small_frame, cfg.person_conf)
+
+            if not faces and persons and not _face_detector_available():
+                if not _warned_fallback:
+                    logger.warning(
+                        "OpenCV Caffe face detector unavailable; using YOLO person boxes as face fallback"
+                    )
+                    _warned_fallback = True
+                faces = _synthetic_faces_from_persons(persons)
 
             if scale != 1.0:
                 inv_scale = 1.0 / scale

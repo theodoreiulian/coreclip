@@ -2,11 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createJob } from '../api/client';
 import { SparkIcon, BoltIcon, XIcon, ArrowRightIcon } from '../components/Icons';
-import Select from '../components/Select';
 
 export default function NewJob() {
   const [url, setUrl] = useState('');
-  const [model, setModel] = useState('gemini-2.5-flash');
   const [error, setError] = useState<any>(null);
   const navigate = useNavigate();
 
@@ -18,7 +16,6 @@ export default function NewJob() {
       const res = await createJob({
         youtube_url: url,
         target_platforms: ['tiktok'],  // only TikTok is enabled for now
-        gemini_model: model
       });
       navigate(`/jobs/${res.data.id}`);
     } catch (err: any) {
@@ -88,23 +85,6 @@ export default function NewJob() {
                 Other platforms are temporarily disabled.
               </span>
             </div>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-[var(--text)]">
-              Gemini model
-            </label>
-            <Select
-              value={model}
-              onChange={setModel}
-              options={[
-                { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · fast' },
-                { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro · highest quality' },
-              ]}
-            />
-            <p className="mt-2 text-xs text-[var(--text-faint)]">
-              Flash is quicker and cheaper; Pro reasons harder about what will go viral.
-            </p>
           </div>
 
           <button type="submit" className="btn btn-primary btn-lg w-full">

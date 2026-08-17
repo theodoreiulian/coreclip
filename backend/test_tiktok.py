@@ -24,51 +24,85 @@ def check(name, cond):
 
 
 def test_caption():
-    print("caption building (laughing emojis + hashtags, no text):")
-    from services.platform_clients.tiktok import LAUGH_EMOJIS
+    print("caption building (generated caption text + hashtags):")
     c = TikTokClient()
+    tags = ["comedy", "funny", "officeprank"]
 
-    # Run many times to cover the random emoji count/choice.
-    for _ in range(200):
-        cap = c._build_caption({"description": "ignored text", "title": "also ignored",
-                                "platform_variants": {"tiktok": "ignored variant"},
-                                "hashtags": ["comedy", "funny", "officeprank", "standupcomedy", "brainrot"]})
-        emoji_part, _, tag_part = cap.partition(" ")
-        # Caption is one repeated laughing emoji, 2–4 of them.
-        emojis = list(emoji_part)
-        if not (2 <= len(emojis) <= 4):
-            check(f"emoji count 2-4 (got {len(emojis)} in {cap!r})", False)
-            break
-        if any(e not in LAUGH_EMOJIS for e in emojis) or len(set(emojis)) != 1:
-            check(f"only one laughing-emoji type repeated ({cap!r})", False)
-            break
-        # No leftover generated text — only hashtags follow the emojis.
-        if any(tok and not tok.startswith("#") for tok in tag_part.split()):
-            check(f"no text caption, only hashtags ({cap!r})", False)
-            break
-    else:
-        check("2-4 laughing emojis + hashtags only (200 samples)", True)
+    cap = c._build_caption({"description": "nah this got me",
+                            "platform_variants": {"tiktok": "he said it with his whole chest"},
+                            "hashtags": tags})
+    check("tiktok variant wins over description",
+          cap == "he said it with his whole chest #comedy #funny #officeprank")
+
+    cap = c._build_caption({"description": "nah this got me", "hashtags": tags})
+    check("falls back to description when no variant",
+          cap == "nah this got me #comedy #funny #officeprank")
+
+    cap = c._build_caption({"description": "nah this got me",
+                            "platform_variants": {"tiktok": "   "}, "hashtags": tags})
+    check("blank variant falls back to description", cap.startswith("nah this got me #"))
+
+    check("text-only clip still posts its text",
+          c._build_caption({"description": "just this"}) == "just this")
+    check("tags-only clip still posts its tags",
+          c._build_caption({"hashtags": tags}) == "#comedy #funny #officeprank")
+    check("empty metadata -> empty caption", c._build_caption({}) == "")
 
     check("hashtags preserved and #-normalized",
           c._build_caption({"hashtags": ["comedy", "#funny", "brainrot"]}).count("#") == 3)
-    long = c._build_caption({"hashtags": ["x" * 3000]})
+    check("stray '#' in text stripped (would type as a hashtag)",
+          "#" not in c._build_caption({"description": "so #real"}).partition(" #")[0])
+
+    # Overflow must cost the TEXT, never the tags — tags are the discovery path.
+    long = c._build_caption({"description": "y" * 5000, "hashtags": tags})
     check("caption truncated to <=2200", len(long) <= 2200)
+    check("all hashtags survive truncation", long.endswith("#comedy #funny #officeprank"))
+    check("tags alone over budget still truncated",
+          len(c._build_caption({"hashtags": ["x" * 3000]})) <= 2200)
 
 
 def test_assemble_hashtags():
-    print("hashtag assembly (2 broad + 2 niche + 1 wildcard):")
-    from pipeline.metadata_generation import _assemble_hashtags
-    check("clamps to 4 model tags then appends wildcard",
-          _assemble_hashtags(["#comedy", "funny", "#standupcomedy", "officeprank", "extra"], "brainrot")
-          == ["comedy", "funny", "standupcomedy", "officeprank", "brainrot"])
-    check("wildcard deduped case-insensitively",
-          _assemble_hashtags(["comedy", "funny", "standup", "prank"], "Comedy")
-          == ["comedy", "funny", "standup", "prank"])
-    check("no wildcard -> just model tags",
-          _assemble_hashtags(["comedy", "funny", "standup", "prank"], None)
-          == ["comedy", "funny", "standup", "prank"])
-    check("few tags still yields 3 (degrades gracefully)",
-          _assemble_hashtags(["comedy", "funny"], "brainrot") == ["comedy", "funny", "brainrot"])
+    print("hashtag assembly (ALWAYS exactly 5: content + person names + filler):")
+    from pipeline.metadata_generation import (
+        _assemble_hashtags, _name_to_tag, TAG_COUNT, FALLBACK_TAGS)
+
+    check("clamps to 5 tags, strips leading '#'",
+          _assemble_hashtags(["#comedy", "funny", "#standupcomedy", "officeprank", "extra"], [])
+          == ["comedy", "funny", "standupcomedy", "officeprank", "extra"])
+    check("person name takes the last slot",
+          _assemble_hashtags(["comedy", "funny", "standupcomedy", "officeprank", "improv"], ["John Cena"])
+          == ["comedy", "funny", "standupcomedy", "officeprank", "johncena"])
+    check("name already present as content is deduped",
+          _assemble_hashtags(["comedy", "funny", "standup", "prank", "improv"], ["Comedy"])
+          == ["comedy", "funny", "standup", "prank", "improv"])
+    check("names capped at 3, content keeps at least 2",
+          _assemble_hashtags(["comedy", "funny"], ["A B", "C D", "E F", "G H"])
+          == ["comedy", "funny", "ab", "cd", "ef"])
+    check("possessive dropped from name ('Matan's' -> 'matan')", _name_to_tag("Matan's") == "matan")
+
+    # The count is a hard guarantee — a short/empty model response must still
+    # ship 5, topped up from FALLBACK_TAGS.
+    check("4 content + no people is topped up to 5",
+          _assemble_hashtags(["comedy", "funny", "officeprank", "standup"], [])
+          == ["comedy", "funny", "officeprank", "standup", FALLBACK_TAGS[0]])
+    check("model returned nothing -> all filler",
+          _assemble_hashtags([], []) == FALLBACK_TAGS[:TAG_COUNT])
+
+    edge_cases = [
+        (["comedy", "funny", "officeprank", "standup"], []),
+        (["comedy", "funny", "officeprank", "standup", "improv"], ["John Cena"]),
+        (["comedy"], ["John Cena"]),
+        (["comedy", "Comedy", "COMEDY"], []),
+        ([], []),
+        ([], ["John Cena"]),
+        (["a", "b", "c", "d", "e", "f", "g"], []),
+        (None, None),
+    ]
+    always_five = all(len(_assemble_hashtags(c, n)) == TAG_COUNT for c, n in edge_cases)
+    no_dupes = all(
+        len({t.lower() for t in _assemble_hashtags(c, n)}) == TAG_COUNT for c, n in edge_cases)
+    check(f"ALWAYS exactly {TAG_COUNT} tags ({len(edge_cases)} edge cases)", always_five)
+    check("never duplicates a tag", no_dupes)
 
 
 def test_hashtag_matcher():
@@ -114,7 +148,8 @@ def test_no_session_path():
           "reconnect" in (res.error_message or "").lower())
 
     res = c.upload("/nonexistent.mp4",
-                   {"account_session_path": "/tmp/coreclip_nonexistent_session_xyz",
+                   {"account_session_path": os.path.join(tempfile.gettempdir(),
+                                                         "coreclip_nonexistent_session_xyz"),
                     "description": "hi"})
     check("missing session dir -> failed", res.status == "failed")
     check("error is nonempty", bool(res.error_message))

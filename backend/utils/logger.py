@@ -2,9 +2,56 @@ import logging
 import contextvars
 import json
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from config import config
+
+# Every log file this module writes is UTF-8. Without an explicit encoding
+# Python picks the locale codepage, which on Windows is cp1252 — and the
+# pipeline logs video titles, hashtags and status glyphs (▶ ✓ ✗) that cp1252
+# cannot represent, turning a log line into a UnicodeEncodeError mid-job.
+_LOG_ENCODING = "utf-8"
+
+
+class SharedRotatingFileHandler(RotatingFileHandler):
+    """A RotatingFileHandler that tolerates other processes holding the file.
+
+    Several processes log to the same files at once: the API server, the Celery
+    worker and beat, plus the orchestrator's per-clip process pool. Appending
+    concurrently is fine everywhere, but *rotating* is not — Windows refuses to
+    rename a file another process still has open, so whichever process trips
+    maxBytes first raises and logging spews the traceback to stderr. (POSIX
+    renames happily, which is why this only ever bites on Windows.)
+
+    A failed rollover is not worth losing a log line over: another process has
+    almost certainly just rotated the same file. Swallow it, reopen, and keep
+    writing to whatever file the name now points at.
+    """
+
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except OSError:
+            if self.stream:
+                try:
+                    self.stream.close()
+                except OSError:
+                    pass
+                self.stream = None
+            if not self.delay:
+                self.stream = self._open()
+
+
+def _rotating_handler(path: str, formatter: logging.Formatter,
+                      max_bytes: int = 50_000_000, backup_count: int = 5):
+    """A UTF-8, multi-process-tolerant rotating handler for `path`."""
+    handler = SharedRotatingFileHandler(
+        path, maxBytes=max_bytes, backupCount=backup_count, encoding=_LOG_ENCODING
+    )
+    handler.setFormatter(formatter)
+    return handler
+
 
 current_job_id = contextvars.ContextVar('current_job_id', default=None)
 current_clip_id = contextvars.ContextVar('current_clip_id', default=None)
@@ -45,8 +92,10 @@ class JobFileHandler(logging.Handler):
             job_dir = os.path.join(config.LOG_DIR, "jobs")
             os.makedirs(job_dir, exist_ok=True)
             log_file = os.path.join(job_dir, f"{job_id}.jsonl")
-            handler = RotatingFileHandler(log_file, maxBytes=self.max_bytes, backupCount=self.backup_count)
-            handler.setFormatter(self._formatter)
+            handler = _rotating_handler(
+                log_file, self._formatter,
+                max_bytes=self.max_bytes, backup_count=self.backup_count,
+            )
             self._handlers[job_id] = handler
         handler.emit(record)
 
@@ -61,6 +110,24 @@ def _log_level_from_string(level: str) -> int:
     return getattr(logging, level.upper(), logging.INFO)
 
 
+def _force_utf8_streams() -> None:
+    """Make stdout/stderr UTF-8 so non-ASCII log output can never crash a job.
+
+    Both launchers redirect the backend's console output into logs/*.log. A
+    redirected stream is not a terminal, so Windows gives it the ANSI codepage
+    (cp1252) — and any video title, hashtag or status glyph outside that
+    codepage would then raise UnicodeEncodeError from inside a logging call.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding=_LOG_ENCODING, errors="replace")
+        except Exception:
+            pass  # already detached or wrapped — nothing we can do, nothing broken
+
+
 def setup_logger():
     logger = logging.getLogger("clipper")
     logger.setLevel(_log_level_from_string(config.LOG_LEVEL))
@@ -72,21 +139,22 @@ def setup_logger():
 
     os.makedirs(config.LOG_DIR, exist_ok=True)
 
+    # The launchers redirect stdout/stderr into log files; on Windows that hands
+    # Python the ANSI codepage instead of UTF-8, so re-point the streams first.
+    _force_utf8_streams()
+
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
-    api_handler = RotatingFileHandler(os.path.join(config.LOG_DIR, "api.jsonl"), maxBytes=50_000_000, backupCount=5)
-    api_handler.setFormatter(formatter)
-    logger.addHandler(api_handler)
+    def _file_handler(filename: str):
+        return _rotating_handler(os.path.join(config.LOG_DIR, filename), formatter)
 
-    platform_handler = RotatingFileHandler(os.path.join(config.LOG_DIR, "platform.jsonl"), maxBytes=50_000_000, backupCount=5)
-    platform_handler.setFormatter(formatter)
-    logger.addHandler(platform_handler)
+    logger.addHandler(_file_handler("api.jsonl"))
+    logger.addHandler(_file_handler("platform.jsonl"))
 
-    error_handler = RotatingFileHandler(os.path.join(config.LOG_DIR, "errors.jsonl"), maxBytes=50_000_000, backupCount=5)
+    error_handler = _file_handler("errors.jsonl")
     error_handler.setLevel(logging.ERROR)
-    error_handler.setFormatter(formatter)
     logger.addHandler(error_handler)
 
     job_handler = JobFileHandler()

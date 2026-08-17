@@ -13,6 +13,38 @@ PIDS=()
 
 mkdir -p "$LOG_DIR"
 
+# ── PATH repair ──
+# Launched from a terminal this script inherits the user's full PATH. Launched
+# by the Electron shell from Finder it inherits only /usr/bin:/bin:/usr/sbin:/sbin
+# — no Homebrew, no nvm — so ffmpeg, redis-server and node all vanish. Put the
+# usual prefixes back so both entry points behave identically.
+# ffmpeg-full comes first on purpose: it is the Homebrew build with libass,
+# which caption burning requires.
+prepend_path() {
+    case ":$PATH:" in
+        *":$1:"*) ;;
+        *) [ -d "$1" ] && PATH="$1:$PATH" ;;
+    esac
+}
+for d in /opt/local/bin /usr/local/bin /opt/homebrew/bin \
+         /usr/local/opt/ffmpeg-full/bin /opt/homebrew/opt/ffmpeg-full/bin \
+         "$HOME/.volta/bin" "$HOME/.local/bin"; do
+    prepend_path "$d"
+done
+# nvm installs node under a versioned directory and is activated by a shell
+# profile this non-interactive script never sources; take the newest install.
+if ! command -v node &>/dev/null && [ -d "$HOME/.nvm/versions/node" ]; then
+    NVM_LATEST="$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)"
+    [ -n "$NVM_LATEST" ] && prepend_path "$HOME/.nvm/versions/node/$NVM_LATEST/bin"
+fi
+export PATH
+
+# Force UTF-8 for every Python child. Their stdout is redirected into logs/,
+# and a redirected stream falls back to the locale encoding — which drops or
+# crashes on the non-ASCII video titles and hashtags the pipeline logs.
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -20,19 +52,48 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Kill a process and everything it spawned, depth-first so children die before
+# the parent can reap or re-spawn them.
+#
+# Signalling only the PIDs we launched is not enough: each service is a subshell
+# whose real work happens two levels down (uvicorn, celery, node), and those in
+# turn spawn ffmpeg and Playwright/Chrome. Killing the subshell alone orphans
+# the whole subtree — an ffmpeg encode keeps a core pinned, and a stray Chrome
+# keeps a TikTok profile locked. This walks the tree the way `taskkill /T` does
+# on Windows, which is what start.ps1 relies on.
+kill_tree() {
+    local pid=$1
+    local child
+    for child in $(pgrep -P "$pid" 2>/dev/null); do
+        kill_tree "$child"
+    done
+    kill -TERM "$pid" 2>/dev/null || true
+}
+
 cleanup() {
     echo ""
     echo -e "${YELLOW}⏹  Shutting down all services...${NC}"
     for pid in "${PIDS[@]}"; do
+        kill_tree "$pid"
+    done
+
+    # Give the trees a moment to exit on their own, then insist.
+    sleep 1
+    for pid in "${PIDS[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null
+            kill -KILL "$pid" 2>/dev/null || true
         fi
     done
-    # Also kill any child processes
-    pkill -f "celery -A tasks.celery_app" 2>/dev/null || true
-    pkill -f "uvicorn main:app" 2>/dev/null || true
-    pkill -f "vite" 2>/dev/null || true
-    pkill -f "npm run dev" 2>/dev/null || true
+
+    # Last-resort sweep for anything a previous run orphaned, matched on this
+    # checkout's own interpreter paths. Two properties matter here: it cannot
+    # touch another project (the old `pkill -f vite` would kill any Vite on the
+    # machine), and it cannot match this script — `bash .../start.sh` contains
+    # the repo root, so a root-wide pattern would kill the cleanup mid-run.
+    pkill -f "$BACKEND_DIR/venv/bin/celery" 2>/dev/null || true
+    pkill -f "$BACKEND_DIR/venv/bin/uvicorn" 2>/dev/null || true
+    pkill -f "$FRONTEND_DIR/node_modules" 2>/dev/null || true
+
     # Stop redis if we started it
     if [ "$REDIS_STARTED_BY_US" = "true" ]; then
         redis-cli shutdown nosave 2>/dev/null || true
@@ -152,6 +213,7 @@ echo -e "${GREEN}✓${NC}  Backend is live"
 echo -e "${CYAN}▶${NC}  Starting Celery worker..."
 (cd "$BACKEND_DIR" && source venv/bin/activate && \
     celery -A tasks.celery_app worker --loglevel=info --concurrency=1 --pool=solo \
+    -Q pipeline,posting,celery \
     > "$LOG_DIR/celery-worker.log" 2>&1) &
 PIDS+=($!)
 

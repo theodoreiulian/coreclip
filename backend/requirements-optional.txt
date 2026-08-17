@@ -1,0 +1,24 @@
+# Optional CoreClip extras. Install with:
+#     pip install -r requirements-optional.txt
+#
+# Nothing in the active pipeline imports these, so they are kept out of
+# requirements.txt: between them they add ~19 transitive packages (~42 MB) to
+# every install, resolve and image build, for features that are dormant.
+# Each consumer degrades gracefully when its dependency is absent.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Speaker diarization — "who spoke when".
+# Used only by backend/services/speaker_diarizer.py, which no pipeline stage
+# calls today. That module already catches ImportError and returns no segments,
+# so its absence is a no-op rather than a crash. Also needs HUGGINGFACE_TOKEN
+# and acceptance of the model's terms on the Hugging Face hub.
+# Pulls in pytorch-lightning, torchmetrics, speechbrain, asteroid-filterbanks
+# and the pyannote.* family (torch itself is required either way, by ultralytics
+# and silero-vad).
+pyannote.audio>=3.1.0
+
+# S3 upload for the cloud-storage handoff described by the CLOUD_STORAGE_PROVIDER
+# / AWS_* / GCS_* settings in config.py. Those settings are read but no upload
+# path is implemented yet; add this when one is.
+boto3>=1.34.0

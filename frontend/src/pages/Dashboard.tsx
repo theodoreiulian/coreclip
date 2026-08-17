@@ -61,7 +61,7 @@ const JobCard = memo(function JobCard({
 
       {openMenu === job.id && (
         <div
-          className="glass-2 absolute right-3 top-11 z-20 min-w-[170px] overflow-hidden p-1"
+          className="absolute right-3 top-11 z-20 min-w-[170px] overflow-hidden rounded-[var(--radius)] border border-[var(--line-strong)] bg-[#0b1224] p-1 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.85)]"
           onClick={e => e.stopPropagation()}
         >
           <button

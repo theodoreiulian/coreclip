@@ -8,7 +8,9 @@ CoreClip is an end-to-end pipeline that ingests a YouTube URL, finds viral momen
 
 ## Running it
 
-`./start.sh` from the repo root is the canonical local launcher — it boots Redis, FastAPI (`:8000`), a Celery worker, Celery beat, and the Vite dev server (`:5173`) and tails logs into `./logs/`. It also auto-creates `backend/venv` and runs `pip install` / `npm install` on first run. There is also `docker-compose up --build`, but note the compose file does *not* mount the SQLite DB volume — local dev via `start.sh` is the path most things have been built around.
+CoreClip is supported on **macOS and Windows**. The canonical local launcher is `./start.sh` on macOS and `.\start.cmd` (a shim over `start.ps1`) on Windows — both boot the same stack: Redis, FastAPI (`:8000`), a Celery worker, Celery beat, and the Vite dev server (`:5173`), tailing logs into `./logs/`. Both auto-create `backend/venv` and run `pip install` / `npm install` on first run. There is also `docker-compose up --build`, but note the compose file does *not* mount the SQLite DB volume — local dev via the launchers is the path most things have been built around.
+
+Keep the two launchers in lockstep: a change to the process list, ports, queues or env setup in one belongs in the other. `backend/test_platform.py` asserts a few of these invariants (Celery's solo pool on Windows, UTF-8 env, PATH repair on macOS) and is the fastest check that a machine is set up correctly.
 
 ### Desktop app
 
@@ -18,10 +20,11 @@ Individual services (when you need to run one piece without the full stack):
 
 ```bash
 # Backend (from backend/)
-source venv/bin/activate
+source venv/bin/activate          # Windows: venv\Scripts\activate
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-# Celery worker — must run from backend/ so `tasks.celery_app` resolves
+# Celery worker — must run from backend/ so `tasks.celery_app` resolves.
+# --pool=solo is mandatory on Windows (prefork needs fork()).
 celery -A tasks.celery_app worker --loglevel=info --concurrency=1 --pool=solo
 celery -A tasks.celery_app beat --loglevel=info
 
@@ -30,9 +33,11 @@ npm run dev
 npm run build   # tsc -b && vite build
 ```
 
-Tests are loose script-style smoke checks in `backend/test_*.py` (run with `python test_ffmpeg.py` etc., not pytest-orchestrated). There is no lint/format config — match the surrounding style.
+Tests are loose script-style smoke checks in `backend/test_*.py` (run with `python test_ffmpeg.py` etc., not pytest-orchestrated). `backend/tests/` holds a small pytest suite, but pytest is not in `requirements.txt` — install it separately to run those. There is no lint/format config — match the surrounding style.
 
-Required system deps: `ffmpeg`, `redis-server`, Node 20+, Python 3.11. `GEMINI_API_KEY` must be set in `.env` at the repo root (loaded by `backend/config.py`, which looks at project-root `.env` first, then CWD).
+Required system deps: FFmpeg **built with libass** (macOS: `ffmpeg-full`; Windows: any winget/Choco/Scoop build), a Redis-compatible server (Windows: Memurai, `redis-server.exe`, or Docker), Node 20+, Python 3.11+. `GEMINI_API_KEY` can be set in `.env` at the repo root (loaded by `backend/config.py`, which looks at project-root `.env` first, then CWD) or through the Settings UI, which writes `user_settings.json` and takes precedence.
+
+`backend/requirements-optional.txt` holds dependencies nothing in the active pipeline imports — `pyannote.audio` (speaker diarization, used only by the currently-uncalled `services/speaker_diarizer.py`) and `boto3` (the unimplemented cloud-storage handoff). Keeping them out of `requirements.txt` drops ~19 transitive packages from every install; both consumers already degrade gracefully when absent, so don't "fix" an ImportError by moving one back.
 
 ## Architecture
 
@@ -49,6 +54,12 @@ ingesting → analyzing → clipping → processing → captioning → generatin
 For each stage it (1) writes the stage name into `Job.status`, (2) publishes a Redis pub/sub event on `clipper:status:{job_id}`, (3) dispatches to `handle_<stage>`, (4) on failure stores `failed_stage` + `error_message` so `POST /api/jobs/{id}/retry` can resume from that exact point via `resume_from`. After the last stage, terminal status is either `completed` (zero clips found) or `ready_for_review` (clips found — manual review is always required before posting).
 
 Each stage module under `backend/pipeline/` is a thin function that mutates the `Job`/`Clip` rows and writes files into `./output/{job_id}/clip_{index}/`. Intermediate artifacts are tracked as paths on the `Clip` row: `raw_clip_path` → `vertical_clip_path` → `final_clip_path` (captioned). `CLEANUP_INTERMEDIATES=true` deletes the first two after captioning; `CLEANUP_SOURCE_AFTER_CLIPPING=true` deletes `source.mp4` + `audio.wav` after extraction.
+
+### Disk guardrails
+
+`ensure_disk_space` runs before each disk-heavy stage and `check_disk_space` before accepting a new job. Both now *reclaim* before refusing, via `file_manager.reclaim_disk_space`, which only acts when already under `MIN_DISK_SPACE_GB` and stops the moment it is satisfied — a healthy install never loses anything. It frees in cheapest-to-lose order: first `output/.cache` source downloads (pure cache; ingestion re-downloads), then the output of terminal jobs oldest-first.
+
+**Only `_RECLAIMABLE_STATUSES` (`completed`, `rejected`, `failed`) are eligible.** `ready_for_review` is excluded because that is the user's unreviewed work, and `posting` because its posts are still pending — which is also what makes the function safe to call from inside a running job, since every in-flight status is ineligible by the same rule. Reclaimed clips leave dangling paths on their rows; the download routes already `os.path.exists`-check and 404, so it degrades to "no longer available" rather than an error.
 
 ### Posting and the beat scheduler
 
@@ -69,6 +80,19 @@ SQLite at `./db.sqlite3` (repo root, *not* under `backend/`). WAL + foreign keys
 ### Frontend
 
 Vite + React 18 + Tailwind v4 + react-router. API base URL is hardcoded to `http://localhost:8000/api` in `src/api/client.ts`. Four pages (`Dashboard`, `NewJob`, `JobView`, `Logs`) and a small set of components — keep it that way unless a feature genuinely needs more.
+
+## Cross-platform rules
+
+`backend/utils/platform_compat.py` is the single place that knows about OS differences. Use it rather than branching on `sys.platform` at a call site:
+
+- **Never shell out to a bare `"ffmpeg"`/`"ffprobe"`.** Go through `services.ffmpeg_client._get_ffmpeg_binary()`, which resolves an absolute path to a libass-capable build. A GUI-launched process (the Electron shell from Finder or Explorer) inherits a minimal `PATH` containing neither Homebrew nor most Windows install dirs, so a bare name resolves in a terminal and fails in the app.
+- **Never build an FFmpeg filter option value by hand.** Pass the path through `ffmpeg_filter_path()`. Filtergraphs are parsed before the filter sees its options, and `\` (escape) plus `:` (option separator) is exactly what a Windows path is made of.
+- **Never call `os.symlink`.** Use `link_or_copy()` — Windows symlinks need Developer Mode or elevation, so it degrades to a hard link and then a copy. Use `os.replace` (not `os.rename`) when a destination may already exist, and `replace_dir()` for directories, which retries past Windows' open-handle locks.
+- **Pass `**no_window_kwargs()` to every `subprocess` call.** Otherwise each ffmpeg invocation flashes a console window on Windows.
+- **Open files with an explicit `encoding`,** and keep log handlers on UTF-8. Windows defaults to cp1252, which cannot represent the video titles, hashtags and status glyphs the pipeline logs.
+- **Default scratch paths come from `default_intermediate_dir()`,** never a literal `/tmp`.
+
+`backend/test_platform.py` checks all of the above; run it after touching any of these areas.
 
 ## Gotchas
 

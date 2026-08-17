@@ -47,8 +47,6 @@ def update_clip_metadata(clip_id: str, update_data: ClipMetadataUpdate, db: Sess
     if not clip:
         raise HTTPException(status_code=404, detail="Clip not found")
         
-    if update_data.title is not None:
-        clip.title = update_data.title
     if update_data.description is not None:
         clip.description = update_data.description
     if update_data.hashtags is not None:

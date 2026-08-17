@@ -49,7 +49,8 @@ class ActiveSpeakerDetector:
             logger.warning(f"ASD weight missing at {_MODEL_PATH} — fallback scorer will be used")
             return
         try:
-            sha = hashlib.sha256(open(_MODEL_PATH, "rb").read()).hexdigest()
+            with open(_MODEL_PATH, "rb") as fh:
+                sha = hashlib.sha256(fh.read()).hexdigest()
             if sha != _MODEL_SHA256:
                 logger.warning(f"ASD weight SHA mismatch ({sha[:12]}…) — fallback scorer will be used")
                 return

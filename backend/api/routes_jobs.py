@@ -12,6 +12,7 @@ from utils.file_manager import check_disk_space
 from config import config
 from tasks.celery_tasks import process_job
 from tasks.celery_app import celery_app
+from services.settings_manager import user_settings
 
 router = APIRouter()
 
@@ -43,7 +44,9 @@ def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
         youtube_url=job_in.youtube_url,
         youtube_video_id=video_id,
         target_platforms=job_in.target_platforms,
-        gemini_model=job_in.gemini_model,
+        # Historical record of the Settings model at creation time. Never read
+        # back for resolution — calls always use the *current* Settings model.
+        gemini_model=user_settings.default_gemini_model,
         status="queued"
     )
     db.add(job)
@@ -178,7 +181,7 @@ async def generate_metadata(
     payload: Optional[GenerateMetadataRequest] = None,
     db: Session = Depends(get_db),
 ):
-    """Lazily generate posting metadata (title/description/hashtags/variants)
+    """Lazily generate posting metadata (description/hashtags/variants)
     for a job's clips. Metadata is no longer produced during the pipeline —
     it is generated on demand from the review screen, optionally for a subset
     of clips."""
@@ -188,7 +191,7 @@ async def generate_metadata(
 
     # Pipeline stage names mirror pipeline.orchestrator.STAGES (not imported
     # here to keep torch/CV dependencies out of the API process).
-    if job.status in ("queued", "ingesting", "analyzing", "clipping", "processing", "captioning"):
+    if job.status in ("queued", "ingesting", "analyzing", "clipping", "processing", "captioning", "generating_metadata"):
         raise HTTPException(
             status_code=409,
             detail="Job is still processing; metadata can be generated once clips are ready.",
@@ -199,10 +202,21 @@ async def generate_metadata(
     try:
         await metadata_generation.generate_for_clips(job, db, clip_ids)
     except Exception as e:
+        err = str(e).lower()
+        is_quota = any(k in err for k in ("429", "quota", "resource_exhausted", "rate limit", "rate-limit"))
+        if is_quota:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Gemini quota exceeded. Your API key's project has no remaining quota "
+                    "for the model selected in Settings. Check your Google AI billing/plan, "
+                    "or pick a different model in Settings."
+                ),
+            )
         raise HTTPException(status_code=502, detail=f"Metadata generation failed: {e}")
 
     count = db.query(func.count(Clip.id)).filter(
-        Clip.job_id == job.id, Clip.title.isnot(None)
+        Clip.job_id == job.id, Clip.description.isnot(None)
     ).scalar()
     return {"status": "ok", "clips_with_metadata": count}
 

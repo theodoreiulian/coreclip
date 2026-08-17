@@ -57,11 +57,9 @@ RESPONSE_SCHEMA = {
             "end_time": {"type": "NUMBER"},
             "virality_score": {"type": "NUMBER"},
             "hook": {"type": "STRING"},
-            "rationale": {"type": "STRING"},
-            "suggested_title": {"type": "STRING"},
             "category": {"type": "STRING"}
         },
-        "required": ["start_time", "end_time", "virality_score", "hook", "rationale", "suggested_title", "category"]
+        "required": ["start_time", "end_time", "virality_score", "hook", "category"]
     }
 }
 
@@ -98,8 +96,6 @@ Return a JSON array of clip candidates. Each object must have:
   "end_time": <float, seconds from video start>,
   "virality_score": <int, 1-10>,
   "hook": "<the first thing the viewer hears — what grabs them>",
-  "rationale": "<why this clip would go viral — be specific>",
-  "suggested_title": "<a curiosity-driven title for this clip>",
   "category": "<one of: funny, hot_take, story, emotional, educational, shocking, quotable>"
 }}
 
@@ -109,7 +105,6 @@ Return ONLY the JSON array, no other text."""
         response_json = gemini_client.call(
             SYSTEM_PROMPT,
             user_message,
-            model=job.gemini_model,
             response_schema=RESPONSE_SCHEMA
         )
     except Exception as e:
@@ -201,10 +196,8 @@ Return ONLY the JSON array, no other text."""
             end_time=c['end_time'],
             duration=c['end_time'] - c['start_time'],
             virality_score=c['virality_score'],
-            virality_rationale=c['rationale'],
             category=c['category'],
-            status="pending",
-            title=c.get('suggested_title')
+            status="pending"
         )
         db.add(clip)
     

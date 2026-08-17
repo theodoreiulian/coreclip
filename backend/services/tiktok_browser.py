@@ -20,6 +20,7 @@ import time
 from datetime import datetime
 
 from config import config
+from utils.platform_compat import IS_MACOS, IS_WINDOWS, find_executable, replace_dir
 
 logger = logging.getLogger("clipper")
 
@@ -36,8 +37,18 @@ PROFILE_URL = "https://www.tiktok.com/profile"
 
 # A realistic desktop UA. The bundled Playwright Chromium otherwise advertises a
 # headless/automation-flavored UA that TikTok's login flags as a bot.
+#
+# The platform token has to match the host we're actually running on: Chrome
+# also sends User-Agent Client Hints (Sec-CH-UA-Platform), which we do not
+# override, so claiming "Macintosh" from a Windows machine is a self-inflicted
+# bot signal — exactly the thing this UA exists to avoid.
+_UA_PLATFORM = (
+    "Windows NT 10.0; Win64; x64" if IS_WINDOWS
+    else "Macintosh; Intel Mac OS X 10_15_7" if IS_MACOS
+    else "X11; Linux x86_64"
+)
 _DEFAULT_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    f"Mozilla/5.0 ({_UA_PLATFORM}) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
@@ -93,25 +104,47 @@ def playwright_available() -> bool:
         return False
 
 
-# Common install locations of the user's *real* Google Chrome, per OS. We drive
-# this (channel='chrome'), not the bundled Chromium, so it must be present.
-_CHROME_PATHS = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",  # macOS
-    "/usr/bin/google-chrome",  # Linux
-    "/usr/bin/google-chrome-stable",
-    "/opt/google/chrome/chrome",
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",  # Windows
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-]
+def _chrome_paths() -> list[str]:
+    """Common install locations of the user's *real* Google Chrome, per OS.
+
+    We drive this (channel='chrome'), not the bundled Chromium, so it must be
+    present. Windows locations are built from environment variables rather than
+    hardcoded C:\\ paths — Program Files is relocatable, and a per-user install
+    (the default when Chrome is installed without admin rights) lands under
+    %LOCALAPPDATA% instead, which is the case a hardcoded list always misses.
+    """
+    if IS_WINDOWS:
+        roots = [
+            os.environ.get("ProgramFiles", r"C:\Program Files"),
+            os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+            os.environ.get("LOCALAPPDATA", ""),
+        ]
+        return [
+            os.path.join(root, "Google", "Chrome", "Application", "chrome.exe")
+            for root in roots if root
+        ]
+    if IS_MACOS:
+        return [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            os.path.expanduser(
+                "~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            ),
+        ]
+    return [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/opt/google/chrome/chrome",
+    ]
 
 
 def chrome_available() -> bool:
     """True if the user's real Google Chrome appears to be installed."""
-    import shutil
-    if any(os.path.exists(p) for p in _CHROME_PATHS):
+    if any(os.path.exists(p) for p in _chrome_paths()):
         return True
-    return bool(shutil.which("google-chrome") or shutil.which("google-chrome-stable")
-                or shutil.which("chrome"))
+    return any(
+        find_executable(name)
+        for name in ("chrome", "google-chrome", "google-chrome-stable")
+    )
 
 
 def is_available() -> bool:
@@ -164,7 +197,6 @@ def adopt_login_profile(login_path: str, handle: str) -> str:
     """After a successful login, move the shared login profile to a stable
     per-account directory and return it. If the move isn't possible, fall back
     to the login path as-is."""
-    import shutil
     base = config.TIKTOK_SESSION_DIR
     safe = "".join(c for c in (handle or "").lstrip("@") if c.isalnum() or c in ("-", "_"))
     if not safe:
@@ -172,13 +204,9 @@ def adopt_login_profile(login_path: str, handle: str) -> str:
     target = os.path.join(base, safe)
     if os.path.abspath(target) == os.path.abspath(login_path):
         return login_path
-    try:
-        if os.path.exists(target):
-            shutil.rmtree(target, ignore_errors=True)
-        os.rename(login_path, target)
-        return target
-    except OSError:
-        return login_path
+    # replace_dir retries: Windows refuses to rename a directory while any
+    # handle inside it is open, and Chrome has only just let go of this profile.
+    return target if replace_dir(login_path, target) else login_path
 
 
 def _launch_persistent(p, session_path: str, headless: bool):
@@ -192,12 +220,12 @@ def _launch_persistent(p, session_path: str, headless: bool):
         user_data_dir=session_path,
         headless=headless,
         args=["--no-first-run", "--disable-blink-features=AutomationControlled"],
-        # Drop the automation switch AND Playwright's keychain-bypass flags:
-        # on macOS Chrome encrypts cookies with a key in the real Keychain, so
-        # `--password-store=basic` / `--use-mock-keychain` would make it unable
-        # to decrypt cookies inherited from the user's real Chrome profile (the
-        # session would look logged-out). We must let Chrome use the real
-        # Keychain (may trigger a one-time "Allow" prompt).
+        # Drop the automation switch AND Playwright's credential-store bypass
+        # flags: Chrome encrypts cookies with an OS-held key (the login Keychain
+        # on macOS, DPAPI on Windows), so `--password-store=basic` /
+        # `--use-mock-keychain` would leave it unable to decrypt the cookies in
+        # this profile and every session would look logged-out. Letting Chrome
+        # use the real store may trigger a one-time "Allow" prompt on macOS.
         ignore_default_args=["--enable-automation", "--use-mock-keychain", "--password-store=basic"],
         user_agent=_DEFAULT_UA,
         viewport={"width": 1280, "height": 800},
@@ -217,103 +245,6 @@ def _launch_persistent(p, session_path: str, headless: bool):
     return context
 
 
-# Natural-language description per SELECTORS key that is a *visible actionable*
-# element, used by the multimodal fallback when the CSS selectors drift. Keys
-# absent here (file_input — hidden; success_marker — a confirmation check, not a
-# target) deliberately stay selector-only.
-_VISION_HINTS = {
-    "caption_editor": "the large text box where the video caption/description is typed",
-    "post_button": "the primary button that publishes the video (labelled 'Post')",
-    # Not reached via _first (the popover is an optional step, not a required one).
-    # Centralized here so _suggestion_rows_vision can self-heal popover-row detection
-    # the same way the other elements do when their CSS selectors drift.
-    "hashtag_suggestion": (
-        "a row inside the hashtag suggestion dropdown that pops up while typing a "
-        "'#tag' in the caption box (each row shows a hashtag name and a post/view count)"
-    ),
-}
-
-# Runs in the page: tags each visible interactive element with a temporary
-# data-coreclip-cand index and returns a compact description list. Tagging real
-# DOM nodes (rather than asking the model to invent a selector) guarantees the
-# selector we hand back, [data-coreclip-cand='N'], actually resolves.
-_CANDIDATE_JS = """
-() => {
-  const sel = "button, a[role=button], [role=button], [role=radio], [role=switch], input, textarea, [contenteditable='true'], div[role], li, [role='option'], [role='listitem'], [role='menuitem']";
-  const out = [];
-  let i = 0;
-  for (const el of document.querySelectorAll(sel)) {
-    const r = el.getBoundingClientRect();
-    const st = getComputedStyle(el);
-    if (r.width < 1 || r.height < 1) continue;
-    if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') continue;
-    if (r.bottom < 0 || r.right < 0 || r.top > (window.innerHeight + 600)) continue;
-    el.setAttribute('data-coreclip-cand', i);
-    out.push({
-      i,
-      tag: el.tagName.toLowerCase(),
-      role: el.getAttribute('role') || '',
-      type: el.getAttribute('type') || '',
-      text: (el.innerText || el.value || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '').trim().slice(0, 80),
-      rect: {x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height)},
-    });
-    i++;
-  }
-  return out;
-}
-"""
-
-
-def _locate_with_vision(page, description: str) -> str | None:
-    """When the hardcoded selectors miss, screenshot the page and ask
-    GEMINI_VISION_MODEL which tagged candidate matches `description`. Returns a
-    [data-coreclip-cand='N'] selector or None. Never raises."""
-    if not config.TIKTOK_VISION_FALLBACK or not config.GEMINI_API_KEY:
-        logger.debug("Vision fallback disabled (TIKTOK_VISION_FALLBACK off or no GEMINI_API_KEY)")
-        return None
-    try:
-        import json
-        from google.genai import types
-        from services.gemini_client import gemini_client
-
-        cands = page.evaluate(_CANDIDATE_JS)
-        if not cands:
-            logger.debug("Vision fallback: no candidate elements found on the page")
-            return None
-        png = page.screenshot()
-        img = types.Part.from_bytes(data=png, mime_type="image/png")
-        prompt = (
-            "You are locating one UI element on the TikTok Studio upload page.\n"
-            f"Target: {description}\n"
-            "Each candidate below is a real element tagged with data-coreclip-cand=index.\n"
-            f"Candidates:\n{json.dumps(cands)}\n"
-            "Return the index of the single best matching candidate, or -1 if none match."
-        )
-        res = gemini_client.call(
-            system_prompt="You map a described UI element to one candidate by index. Reply JSON only.",
-            user_message=[prompt, img],
-            model=config.GEMINI_VISION_MODEL,
-            temperature=0.0,
-            response_schema={
-                "type": "object",
-                "properties": {"index": {"type": "integer"}, "reason": {"type": "string"}},
-                "required": ["index"],
-            },
-        )
-        idx = res.get("index", -1)
-        if isinstance(idx, int) and 0 <= idx < len(cands):
-            logger.info(
-                f"Gemini-vision picked candidate {idx} ('{cands[idx].get('text','')}') "
-                f"— {res.get('reason','')}"
-            )
-            return f"[data-coreclip-cand='{idx}']"
-        logger.info(f"Gemini-vision found no candidate matching: {description}")
-        return None
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"TikTok vision fallback failed: {e}")
-        return None
-
-
 def _first(page, key, timeout=15000, state="visible"):
     """Return the first selector from SELECTORS[key] that resolves, else raise.
 
@@ -323,9 +254,8 @@ def _first(page, key, timeout=15000, state="visible"):
     its full timeout ('waiting for element to be visible'). Pass state='attached'
     for elements that are meant to stay hidden (e.g. the file input).
 
-    On total selector failure, an actionable element (one with a _VISION_HINTS
-    entry) gets one self-healing attempt via the multimodal fallback before we
-    give up."""
+    On total selector failure this raises with the key that broke — TikTok DOM
+    drift is fixed by updating SELECTORS[key], so the error names what to fix."""
     last_err = None
     for sel in SELECTORS[key]:
         try:
@@ -334,25 +264,9 @@ def _first(page, key, timeout=15000, state="visible"):
         except Exception as e:  # noqa: BLE001
             last_err = e
 
-    vision_note = "no vision fallback for this element"
-    hint = _VISION_HINTS.get(key)
-    if hint:
-        sel = _locate_with_vision(page, hint)
-        if sel:
-            try:
-                page.wait_for_selector(sel, timeout=5000, state=state)
-                logger.warning(
-                    f"TikTok selectors for '{key}' failed; using Gemini-vision fallback {sel}"
-                )
-                return sel
-            except Exception as e:  # noqa: BLE001
-                last_err = e
-                vision_note = f"vision fallback element never became {state}"
-        else:
-            vision_note = "vision fallback found no match"
-
     raise TikTokBrowserError(
-        f"None of the {key} selectors matched ({state}); {vision_note}: {last_err}"
+        f"None of the {key} selectors matched ({state}); "
+        f"TikTok's DOM likely changed — update SELECTORS['{key}']: {last_err}"
     )
 
 
@@ -923,32 +837,14 @@ def _suggestion_rows_css(page):
     return []
 
 
-def _suggestion_rows_vision(page):
-    """Last-resort popover detection when every CSS selector misses: ask
-    GEMINI_VISION_MODEL to point at a suggestion row. Returns at most one best-guess
-    (element, label). Non-raising; [] if disabled or nothing matches."""
-    vsel = _locate_with_vision(page, _VISION_HINTS["hashtag_suggestion"])
-    if not vsel:
-        return []
-    try:
-        it = page.query_selector(vsel)
-        if it and it.is_visible():
-            raw = (it.inner_text() or "").strip()
-            if raw:
-                return [(it, raw)]
-    except Exception:  # noqa: BLE001
-        pass
-    return []
-
-
-def _wait_for_suggestion_rows(page, state, want, deadline_s: float = _HASHTAG_POPOVER_S):
+def _wait_for_suggestion_rows(page, want, deadline_s: float = _HASHTAG_POPOVER_S):
     """Poll for autosuggest rows that belong to the CURRENT tag — i.e. at least one row
     whose tag token starts with `want`. This (a) waits out the async popover, (b) ignores
     a STALE popover still showing the previous tag's results for a moment right after a
     commit (the race that left some tags plain), and (c) can never mistake the static
-    'suggested hashtags' widget for the autosuggest. Falls back to a budgeted Gemini-vision
-    probe. Returns (rows, from_vision); `rows` may be stale/empty (the caller logs them) if
-    nothing matching appears before the deadline."""
+    'suggested hashtags' widget for the autosuggest. Returns `rows`, which may be
+    stale/empty (the caller logs them) if nothing matching appears before the deadline —
+    the caller then falls back to _commit_via_boundary, which needs no popover at all."""
     deadline = time.time() + deadline_s
     last = []
     while time.time() < deadline:
@@ -956,14 +852,9 @@ def _wait_for_suggestion_rows(page, state, want, deadline_s: float = _HASHTAG_PO
         if rows:
             last = rows
             if any(_row_tag_token(raw).startswith(want) for (_, raw) in rows):
-                return rows, False
+                return rows
         page.wait_for_timeout(120)
-    if state.get("vision_budget", 0) > 0:
-        state["vision_budget"] -= 1
-        v = _suggestion_rows_vision(page)
-        if v:
-            return v, True
-    return last, False
+    return last
 
 
 def _attempt_commit(page, word: str, state) -> str:
@@ -973,7 +864,7 @@ def _attempt_commit(page, word: str, state) -> str:
     once produced emoji-only captions). The actual popover row texts are logged so
     real-world TikTok drift is visible from the logs alone."""
     want = _norm_tag(word)
-    rows, from_vision = _wait_for_suggestion_rows(page, state, want)
+    rows = _wait_for_suggestion_rows(page, want)
     if not rows:
         try:
             dbg = page.evaluate(
@@ -991,8 +882,7 @@ def _attempt_commit(page, word: str, state) -> str:
     tokens = [(el, _row_tag_token(raw)) for (el, raw) in rows]
     sample = [tok for (_, tok) in tokens if tok][:8]
     logger.info(
-        f"    popover for {word}: matched '{_popover_row_selector}'"
-        f"{' (vision)' if from_vision else ''}, rows={sample}"
+        f"    popover for {word}: matched '{_popover_row_selector}', rows={sample}"
     )
     exact = next((el for (el, tok) in tokens if tok == want), None)
     if exact is None:
@@ -1129,7 +1019,7 @@ def _set_caption(page, caption: str):
     # popover (see _type_hashtag) and ends up bold + clickable. Non-hashtag words (the
     # leading emoji run) go in via insert_text, which inserts the string as a single
     # event and avoids multi-codepoint emoji being split into broken surrogate halves.
-    state = {"committed": 0, "plain": 0, "vision_budget": 2}
+    state = {"committed": 0, "plain": 0}
     words = caption.split(" ")
     for idx, word in enumerate(words):
         is_last = idx == len(words) - 1

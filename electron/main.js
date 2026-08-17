@@ -1,16 +1,33 @@
 'use strict';
 
 const { app, BrowserWindow, shell, dialog } = require('electron');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const http = require('http');
 const path = require('path');
 
 // ── Config ──
+const IS_WINDOWS = process.platform === 'win32';
 const ROOT_DIR = path.resolve(__dirname, '..'); // the coreclip/ repo root
-const START_SCRIPT = path.join(ROOT_DIR, 'start.sh');
 const FRONTEND_URL = 'http://localhost:5173';
 const READY_TIMEOUT_MS = 10 * 60 * 1000; // first run installs deps + downloads models
 const POLL_INTERVAL_MS = 800;
+
+// Each platform has its own launcher for the same five-process stack. Neither
+// is invoked through a shell — we name the interpreter explicitly so the app
+// does not depend on file associations or on the .sh bit being executable.
+function launcherCommand() {
+  if (IS_WINDOWS) {
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', path.join(ROOT_DIR, 'start.ps1'),
+      ],
+    };
+  }
+  return { command: 'bash', args: [path.join(ROOT_DIR, 'start.sh')] };
+}
 
 let mainWindow = null;
 let stackProc = null;
@@ -44,12 +61,16 @@ function setLoadingStatus(text) {
     .catch(() => {});
 }
 
-// Spawn start.sh as its own process group so we can tear the whole stack
-// (Redis, FastAPI, Celery worker/beat, Vite) down with one signal on quit.
+// Spawn the launcher so that the whole stack (Redis, FastAPI, Celery
+// worker/beat, Vite) can be torn down as a unit on quit. On POSIX that means a
+// new process group, killable as -pid; Windows has no process groups to signal,
+// so there we keep the default parent/child link and let taskkill /T walk it.
 function startStack() {
-  stackProc = spawn('bash', [START_SCRIPT], {
+  const { command, args } = launcherCommand();
+  stackProc = spawn(command, args, {
     cwd: ROOT_DIR,
-    detached: true, // new process group => killable as -pid
+    detached: !IS_WINDOWS,
+    windowsHide: true, // no console flash from the PowerShell launcher
     env: { ...process.env, CORECLIP_NO_BROWSER: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -76,15 +97,25 @@ function startStack() {
   });
 }
 
-// Tear down the whole process group started by startStack(). start.sh traps
-// SIGTERM and runs its own cleanup (kills celery/uvicorn, shuts down redis if
-// it started it).
+// Tear down everything startStack() brought up.
+//
+// POSIX: signal the process group. start.sh traps SIGTERM and runs its own
+// cleanup (kills celery/uvicorn, shuts down redis if it started it).
+//
+// Windows: there is no SIGTERM, and killing powershell.exe alone would orphan
+// every service it launched. taskkill /T walks the process tree instead, which
+// reaches the cmd.exe wrappers and the python/node processes underneath them.
 function stopStack() {
   if (!stackProc || !weStartedTheStack) return;
+  const pid = stackProc.pid;
   try {
-    process.kill(-stackProc.pid, 'SIGTERM');
+    if (IS_WINDOWS) {
+      execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], () => {});
+    } else {
+      process.kill(-pid, 'SIGTERM');
+    }
   } catch (_) {
-    /* group already gone */
+    /* already gone */
   }
 }
 
@@ -148,12 +179,13 @@ async function boot() {
   if (ready) {
     mainWindow.loadURL(FRONTEND_URL);
   } else {
+    const manualCommand = IS_WINDOWS ? '.\\start.cmd' : './start.sh';
     setLoadingStatus('Timed out waiting for the backend. Check logs/ for details.');
     dialog.showErrorBox(
       'CoreClip failed to start',
       'The CoreClip backend did not become ready in time.\n\n' +
-        'Check the log files under the logs/ directory for details, or run ./start.sh ' +
-        'in a terminal to see the full output.'
+        'Check the log files under the logs/ directory for details, or run ' +
+        `${manualCommand} in a terminal to see the full output.`
     );
   }
 }
