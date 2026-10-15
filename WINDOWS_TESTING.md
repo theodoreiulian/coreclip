@@ -42,8 +42,8 @@ you cannot tick, record the actual output and see **Reporting back**.
 
 - [ ] **P0 — Build the environment**
   - Run from the repo root: `.\start.cmd`
-  - First run creates `backend\venv`, pip-installs everything and downloads
-    Playwright's Chromium. Several minutes.
+  - First run creates `backend\venv` and pip-installs everything.
+    Several minutes.
   - A failure here is a section 2 finding — record it and read section 2 for the
     diagnostics before retrying.
   - Afterwards, always invoke Python as `.\venv\Scripts\python.exe` from

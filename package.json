@@ -6,13 +6,12 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "dist": "npx --yes electron-builder@24.13.3",
+    "dist:mac": "npx --yes electron-builder@24.13.3 --mac",
+    "dist:win": "npx --yes electron-builder@24.13.3 --win"
   },
   "devDependencies": {
-    "electron": "^43.3.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^43.3.0"
   },
   "build": {
     "appId": "fr.hexalabs.coreclip",

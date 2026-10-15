@@ -13,16 +13,11 @@ at the exact time you chose. You never leave CoreClip.
 
 ## Setup (≈ 2 minutes, one time)
 
-### 1. Install Chromium for Playwright
+### 1. Install Google Chrome
 
-From the backend directory with the venv active:
-```bash
-cd backend
-source venv/bin/activate
-playwright install chromium
-```
-
-Or let `./start.sh` handle it (it runs this automatically on first venv setup).
+CoreClip drives your real, installed Google Chrome (https://www.google.com/chrome)
+— not Playwright's bundled Chromium, so there is nothing to `playwright install`.
+The Playwright Python package itself comes with `requirements.txt`.
 
 ### 2. Connect your TikTok account in CoreClip
 
@@ -100,8 +95,9 @@ selectors are centralized in `backend/services/tiktok_browser.py` under the
 
 ## Troubleshooting
 
-- **"+ Connect TikTok" is greyed out** → Playwright/Chromium isn't installed.
-  Run `playwright install chromium` in the backend venv and restart.
+- **"+ Connect TikTok" is greyed out** → Google Chrome or the Playwright Python
+  package isn't installed. Install Chrome, or run
+  `pip install -r requirements.txt` in the backend venv, and restart.
 - **Login pops open a browser, nothing happens** → complete the login in the
   browser window. CoreClip polls for a `sessionid` cookie — once you're logged
   in, it auto-detects.
