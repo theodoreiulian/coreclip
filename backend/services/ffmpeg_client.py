@@ -396,6 +396,38 @@ def extract_audio(input_path: str, output_path: str):
     run_ffmpeg(args, "Extract Audio")
 
 
+def decode_audio_mono(input_path: str, sample_rate: int = 16000) -> bytes:
+    """Decode a file's audio to raw mono 16-bit PCM, returned in memory.
+
+    Piped rather than written to disk: the caller wants samples, not a file.
+    Integer output is deliberate — ffmpeg only normalises its downmix matrix
+    for integer formats, so a float target sums stereo at 0.707 per channel
+    (louder than either input, and able to exceed full scale) instead of
+    averaging the channels.
+    """
+    ffmpeg_bin = _get_ffmpeg_binary()
+    cmd = [
+        ffmpeg_bin, "-v", "error", "-nostdin",
+        "-i", input_path,
+        "-vn",
+        "-ac", "1",
+        "-ar", str(sample_rate),
+        "-f", "s16le",
+        "-",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, check=False, **no_window_kwargs())
+    except FileNotFoundError:
+        raise FFmpegError(
+            f"ffmpeg executable not found: {ffmpeg_bin}\n" + _install_hint()
+        )
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        logger.error(f"FFmpeg failed (Decode Audio): {stderr}")
+        raise FFmpegError(f"FFmpeg failed (Decode Audio): {stderr}")
+    return result.stdout
+
+
 def extract_clip(input_path: str, output_path: str, start_time: float, duration: float):
     """Fast-seek clip extraction using the configured intermediate encoder."""
     args = [

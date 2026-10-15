@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 from contextlib import asynccontextmanager
@@ -7,6 +8,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import config
 from database import init_db
 from api import routes_jobs, routes_clips, routes_logs, routes_ws, routes_accounts, routes_posting, routes_settings
+
+class _FailedRequestsOnly(logging.Filter):
+    """Keep only 4xx/5xx lines in uvicorn's access log.
+
+    The frontend polls job state continuously, and the launchers redirect
+    stdout into logs/backend.log with no rotation — successful requests alone
+    grow that file by tens of MB per session. Failures are what it is read for.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return int(record.args[4]) >= 400
+        except (TypeError, IndexError, ValueError):
+            return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_FailedRequestsOnly())
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

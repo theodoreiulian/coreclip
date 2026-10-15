@@ -144,9 +144,11 @@ if [ ! -d "$BACKEND_DIR/venv" ]; then
     echo -e "${YELLOW}⚠  No Python venv found. Creating one...${NC}"
     python3 -m venv "$BACKEND_DIR/venv"
     source "$BACKEND_DIR/venv/bin/activate"
-    pip install -r "$BACKEND_DIR/requirements.txt"
-    # Chromium for TikTok posting (browser automation). Skip with SKIP_PLAYWRIGHT=1.
-    [ -z "$SKIP_PLAYWRIGHT" ] && python -m playwright install chromium
+    # --no-cache-dir: pip would otherwise keep a second copy of every wheel
+    # (torch alone is hundreds of MB) in the user cache. No `playwright install`
+    # either — TikTok posting drives the installed Google Chrome, never the
+    # bundled Chromium.
+    pip install --no-cache-dir -r "$BACKEND_DIR/requirements.txt"
 else
     source "$BACKEND_DIR/venv/bin/activate"
 fi

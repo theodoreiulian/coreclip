@@ -101,7 +101,8 @@ If you already have the stack running via `./start.sh` (macOS) or `.\start.cmd`
 instance instead of starting a second copy.
 
 To build a distributable bundle of the shell, run `npm run dist:mac` or
-`npm run dist:win`. Note this packages only the Electron launcher — the backend
+`npm run dist:win` (these fetch `electron-builder` on demand through `npx`, so
+it is not part of the regular install). Note this packages only the Electron launcher — the backend
 still requires the local prerequisites above (Python, Redis, FFmpeg) to be
 installed on the machine.
 

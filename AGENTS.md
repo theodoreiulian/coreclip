@@ -9,12 +9,12 @@ CoreClip is a fully automated, agentic pipeline for ingesting YouTube videos, an
 - **FastAPI** — HTTP API framework
 - **Celery 5.x** — distributed task queue
 - **Redis** — Celery broker and pub/sub backend
-- **SQLAlchemy 2.x + aiosqlite** — ORM over SQLite (WAL mode enabled)
+- **SQLAlchemy 2.x** — ORM over SQLite (WAL mode enabled)
 - **Google GenAI (`google-genai`)** — Gemini 2.5 API client
 - **faster-whisper** — local speech-to-text transcription
 - **OpenCV (headless), MediaPipe, Ultralytics YOLOv8** — computer vision and face/speaker tracking
 - **pyannote.audio** — speaker diarization
-- **librosa** — audio feature analysis
+- **numpy** — audio feature analysis (decoded through FFmpeg)
 - **yt-dlp** — YouTube video downloading
 - **FFmpeg + ffprobe** — video/audio processing (required system binary)
 - **boto3** — AWS S3 cloud storage client

@@ -89,7 +89,7 @@ class Config:
     POSTING_SOFT_TIME_LIMIT: int = int(os.getenv("POSTING_SOFT_TIME_LIMIT", "600"))
     POSTING_TIME_LIMIT: int = int(os.getenv("POSTING_TIME_LIMIT", "900"))
 
-    # Enable librosa-based audio feature summary passed to moment detection.
+    # Enable the audio energy summary passed to moment detection.
     ENABLE_AUDIO_ANALYSIS: bool = os.getenv("ENABLE_AUDIO_ANALYSIS", "true").lower() == "true"
 
     FFMPEG_INTERMEDIATE_PRESET: str = os.getenv("FFMPEG_INTERMEDIATE_PRESET", "veryfast")

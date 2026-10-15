@@ -39,6 +39,8 @@ Required system deps: FFmpeg **built with libass** (macOS: `ffmpeg-full`; Window
 
 `backend/requirements-optional.txt` holds dependencies nothing in the active pipeline imports — `pyannote.audio` (speaker diarization, used only by the currently-uncalled `services/speaker_diarizer.py`) and `boto3` (the unimplemented cloud-storage handoff). Keeping them out of `requirements.txt` drops ~19 transitive packages from every install; both consumers already degrade gracefully when absent, so don't "fix" an ImportError by moving one back.
 
+The install footprint is kept small on purpose, so don't reintroduce these: `librosa` (`pipeline/audio_analysis.py` reproduces the three features it used in numpy, fed by `ffmpeg_client.decode_audio_mono` — librosa costs 200+ MB of numba/llvmlite/scikit-learn), `playwright install chromium` (TikTok posting only ever launches the installed Google Chrome via `channel="chrome"`), and `electron-builder` as a devDependency (the `dist` scripts run it through `npx`). The launchers install with `pip --no-cache-dir`, and `main.py` drops successful requests from uvicorn's access log, which the frontend's polling otherwise grows without bound in `logs/backend.log`.
+
 ## Architecture
 
 ### Job lifecycle and the orchestrator

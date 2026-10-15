@@ -229,14 +229,13 @@ if (-not (Test-Path $VenvPython)) {
     if (-not (Test-Path $VenvPython)) { Fail 'Failed to create the Python venv.' }
 
     Write-Step 'Installing Python dependencies (this takes a few minutes)...'
-    & $VenvPython -m pip install --upgrade pip
-    & $VenvPython -m pip install -r (Join-Path $BackendDir 'requirements.txt')
+    # --no-cache-dir: pip would otherwise keep a second copy of every wheel
+    # (torch alone is hundreds of MB) in the user cache. No `playwright install`
+    # either - TikTok posting drives the installed Google Chrome, never the
+    # bundled Chromium.
+    & $VenvPython -m pip install --no-cache-dir --upgrade pip
+    & $VenvPython -m pip install --no-cache-dir -r (Join-Path $BackendDir 'requirements.txt')
     if ($LASTEXITCODE -ne 0) { Fail 'pip install failed. See the output above.' }
-
-    # Chromium for TikTok posting (browser automation). Skip with SKIP_PLAYWRIGHT=1.
-    if (-not $env:SKIP_PLAYWRIGHT) {
-        & $VenvPython -m playwright install chromium
-    }
 }
 Write-Ok 'Python venv ready'
 
